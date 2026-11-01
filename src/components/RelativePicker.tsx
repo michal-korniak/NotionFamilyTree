@@ -12,7 +12,7 @@ const MAX_RESULTS = 6;
 // Only a first guess for the form: the last word is taken as the surname, everything before it as given names.
 function splitTypedName(typed: string, suggestedSurname?: string): NewPersonNames {
   const words = typed.split(/\s+/);
-  return words.length > 1 ? { givenNames: words.slice(0, -1).join(' '), birthSurname: words[words.length - 1]! } : { givenNames: typed, birthSurname: suggestedSurname ?? '' };
+  return words.length > 1 ? { givenNames: words.slice(0, -1).join(' '), surname: words[words.length - 1]! } : { givenNames: typed, surname: suggestedSurname ?? '' };
 }
 
 const inputClass = 'w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:ring-zinc-800';
@@ -37,7 +37,7 @@ export function RelativePicker({ people, exclude, placeholder, onPick, onCreate,
   const results = useMemo(() => searchPeople(people, query, MAX_RESULTS, exclude), [people, query, exclude]);
   const trimmed = query.trim();
   // Creating someone shows the typed text split into given names and surname for correction, and asks for a gender; nobody is added with an unknown gender.
-  const [draft, setDraft] = useState<{ givenNames: string; birthSurname: string; gender: Gender | null } | null>(null);
+  const [draft, setDraft] = useState<{ givenNames: string; surname: string; gender: Gender | null } | null>(null);
   const [secondParentId, setSecondParentId] = useState<string | null>(secondParents?.[0]?.id ?? null);
   const optionCount = results.length + (trimmed ? 1 : 0);
 
@@ -48,11 +48,11 @@ export function RelativePicker({ people, exclude, placeholder, onPick, onCreate,
     if (failure) setError(failure); else onClose();
   };
 
-  const canCreate = !!draft?.gender && !!(draft.givenNames.trim() || draft.birthSurname.trim());
+  const canCreate = !!draft?.gender && !!(draft.givenNames.trim() || draft.surname.trim());
   const create = (event: FormEvent) => {
     event.preventDefault();
     if (!draft?.gender || !canCreate) return;
-    const failure = onCreate({ givenNames: draft.givenNames.trim(), birthSurname: draft.birthSurname.trim() }, draft.gender, secondParentId);
+    const failure = onCreate({ givenNames: draft.givenNames.trim(), surname: draft.surname.trim() }, draft.gender, secondParentId);
     if (failure) { setError(failure); setDraft(null); } else onClose();
   };
 
@@ -96,7 +96,7 @@ export function RelativePicker({ people, exclude, placeholder, onPick, onCreate,
               <form onSubmit={create} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setDraft(null); } }} className="space-y-2 px-2 py-1.5">
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block"><span className={labelClass}>Imiona</span><input autoFocus value={draft.givenNames} onChange={(e) => setDraft({ ...draft, givenNames: e.target.value })} className={inputClass} /></label>
-                  <label className="block"><span className={labelClass}>Nazwisko rodowe</span><input value={draft.birthSurname} onChange={(e) => setDraft({ ...draft, birthSurname: e.target.value })} className={inputClass} /></label>
+                  <label className="block"><span className={labelClass}>Nazwisko</span><input value={draft.surname} onChange={(e) => setDraft({ ...draft, surname: e.target.value })} className={inputClass} /></label>
                 </div>
                 <div className="flex items-center gap-1">
                   {(['M', 'F'] as const).map((g) => (

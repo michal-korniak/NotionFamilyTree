@@ -151,11 +151,12 @@ export function removeRelative(people: PeopleById, id: string, kind: RelativeKin
 
 export interface NewPersonNames {
   givenNames: string;
-  birthSurname: string;
+  // The surname the person goes by now; it is stored as the married surname because the birth surname of someone added this way is usually unknown.
+  surname: string;
 }
 
 export function createRelative(people: PeopleById, id: string, kind: RelativeKind, names: NewPersonNames, gender: Gender): EditResult & { id?: string } {
-  const parts = { givenNames: names.givenNames, birthSurname: names.birthSurname, marriedSurname: '' };
+  const parts = { givenNames: names.givenNames, birthSurname: '', marriedSurname: names.surname };
   const { people: withNew, id: newId } = createPerson(people, { name: composeName(parts), ...parts, gender });
   const result = addRelative(withNew, id, kind, newId);
   return result.ok ? { ...result, id: newId } : result;

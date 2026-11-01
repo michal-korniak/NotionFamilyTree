@@ -116,7 +116,7 @@ function DrawerBody({ person, people, editing, isNew, describeUnion, unions, rel
   const exclude = useMemo(() => new Set([person.id, ...relativesOf(person), ...siblings]), [person, siblings]);
 
   const father = person.gender === 'M' ? person : person.spouses.map((id) => people.get(id)).find((spouse) => spouse?.gender === 'M');
-  const childSurname = father?.birthSurname;
+  const childSurname = father?.marriedSurname || father?.birthSurname;
   const relationEditing = (kind: RelativeKind, addLabel: string, canAdd = true): RelativeEditing => ({ exclude, addLabel, canAdd, onAdd: (id) => actions.onAddRelation(kind, id), onCreate: (names, gender) => actions.onCreateRelative(kind, names, gender), suggestedSurname: kind === 'siblings' ? person.birthSurname : kind === 'children' ? childSurname : undefined, onRemove: (id) => actions.onRemoveRelation(kind, id) });
 
   return (
