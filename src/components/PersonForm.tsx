@@ -75,11 +75,11 @@ export function PersonForm({ person, isNew = false, onSave, onCancel }: PersonFo
         <input autoFocus value={values.givenNames} onChange={(e) => set('givenNames', e.target.value)} aria-invalid={Boolean(errors.givenNames)} className={inputClass} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
+        <Field label="Nazwisko">
+          <input value={values.marriedSurname} onChange={(e) => set('marriedSurname', e.target.value)} className={inputClass} />
+        </Field>
         <Field label="Nazwisko rodowe">
           <input value={values.birthSurname} onChange={(e) => set('birthSurname', e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="Nazwisko po ślubie">
-          <input value={values.marriedSurname} onChange={(e) => set('marriedSurname', e.target.value)} placeholder="jeśli inne niż rodowe" className={inputClass} />
         </Field>
       </div>
       {fullName && <p className="-mt-1 text-xs text-zinc-500">W Notion jako: <span className="font-medium text-zinc-700 dark:text-zinc-300">{fullName}</span></p>}

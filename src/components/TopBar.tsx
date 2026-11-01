@@ -59,7 +59,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           <IconButton label="Cofnij (Ctrl+Z)" onClick={onUndo} disabled={!canUndo}><Undo2 className="size-4" /></IconButton>
           <IconButton label="Ponów (Ctrl+Y)" onClick={onRedo} disabled={!canRedo}><Redo2 className="size-4" /></IconButton>
         </div>
-        <IconButton label="Dodaj osobę" onClick={onAddPerson}><UserPlus className="size-4" /></IconButton>
+        <div className="hidden sm:block"><IconButton label="Dodaj osobę" onClick={onAddPerson}><UserPlus className="size-4" /></IconButton></div>
         <div className="hidden items-center gap-1 sm:flex">
           <IconButton label={theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny'} onClick={onToggleTheme}>
             {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
@@ -78,6 +78,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           </button>
         )}
         <MoreMenu compactItems={[
+          { label: 'Dodaj osobę', icon: <UserPlus className="size-3.5" />, onSelect: onAddPerson },
           { label: 'Cofnij', icon: <Undo2 className="size-3.5" />, disabled: !canUndo, onSelect: onUndo },
           { label: 'Ponów', icon: <Redo2 className="size-3.5" />, disabled: !canRedo, onSelect: onRedo },
           ...(notionPending !== undefined ? [{ label: refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion', icon: <RefreshCw className="size-3.5" />, disabled: refreshing, onSelect: onRefresh }] : []),

@@ -4,14 +4,25 @@ export interface DegreeRange {
   min: number;
   max: number;
   initial: number;
+  // A phone screen fits far fewer cards, so a new tab starts with the closest family only.
+  phoneInitial: number;
 }
 
 export const DEGREE_RANGES = {
-  ancestors: { min: 0, max: 8, initial: 2 },
-  descendants: { min: 0, max: 8, initial: 2 },
-  kinship: { min: 0, max: 6, initial: 2 },
-  affinity: { min: 0, max: 6, initial: 1 },
+  ancestors: { min: 0, max: 8, initial: 2, phoneInitial: 1 },
+  descendants: { min: 0, max: 8, initial: 2, phoneInitial: 1 },
+  kinship: { min: 0, max: 6, initial: 2, phoneInitial: 1 },
+  affinity: { min: 0, max: 6, initial: 1, phoneInitial: 0 },
 } satisfies Record<string, DegreeRange>;
+
+// Matches Tailwind's sm breakpoint, below which the app uses its phone layout.
+export function isPhoneLayout(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
+}
+
+export function initialDegree(range: DegreeRange): number {
+  return isPhoneLayout() ? range.phoneInitial : range.initial;
+}
 
 export type FamilyDegrees = Record<keyof typeof DEGREE_RANGES, number>;
 

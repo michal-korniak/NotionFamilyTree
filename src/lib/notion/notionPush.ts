@@ -84,7 +84,7 @@ function plan(link: NotionLink, current: PeopleById, unions: Record<string, Unio
   return result;
 }
 
-const fieldLabels: Record<DetailField, string> = { name: 'imię i nazwisko', givenNames: 'imiona', birthSurname: 'nazwisko rodowe', marriedSurname: 'nazwisko po ślubie', gender: 'płeć', birthDate: 'data urodzenia', deathDate: 'data śmierci', birthPlace: 'miejsce urodzenia', deathPlace: 'miejsce śmierci', biography: 'notatki' };
+const fieldLabels: Record<DetailField, string> = { name: 'imię i nazwisko', givenNames: 'imiona', birthSurname: 'nazwisko rodowe', marriedSurname: 'nazwisko', gender: 'płeć', birthDate: 'data urodzenia', deathDate: 'data śmierci', birthPlace: 'miejsce urodzenia', deathPlace: 'miejsce śmierci', biography: 'notatki' };
 
 export function diffNotion(link: NotionLink, current: PeopleById, unions: Record<string, UnionDetails>): NotionChange[] {
   const p = plan(link, current, unions);

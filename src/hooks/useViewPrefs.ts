@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DEGREE_RANGES, type DegreeRange, type FamilyDegrees } from '../lib/familyView';
+import { DEGREE_RANGES, initialDegree, type DegreeRange, type FamilyDegrees } from '../lib/familyView';
 
 export const HOME_TAB_ID = 'home';
 
@@ -17,7 +17,7 @@ export interface ViewPrefs {
 const STORAGE_KEY = 'nft:view';
 
 // Anything that is not a finite number (missing after an app update, NaN from arithmetic on it) falls back to the default instead of sticking.
-const clamp = (value: unknown, range: DegreeRange) => (typeof value === 'number' && Number.isFinite(value) ? Math.min(range.max, Math.max(range.min, Math.round(value))) : range.initial);
+const clamp = (value: unknown, range: DegreeRange) => (typeof value === 'number' && Number.isFinite(value) ? Math.min(range.max, Math.max(range.min, Math.round(value))) : initialDegree(range));
 
 const kinds = Object.keys(DEGREE_RANGES) as (keyof FamilyDegrees)[];
 
