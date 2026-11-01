@@ -48,7 +48,7 @@ const controls: { kind: keyof FamilyDegrees; label: string; describe: (value: nu
 function Stepper({ label, value, range, description, onChange }: { label: string; value: number; range: DegreeRange; description: string; onChange: (delta: number) => void }) {
   const button = 'grid size-6 place-items-center rounded text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-zinc-100';
   return (
-    <div className="flex h-[30px] items-center gap-1 px-1.5" title={`${label} — ${description}`}>
+    <div className="flex h-[30px] items-center justify-between gap-1 px-1.5" title={`${label} — ${description}`}>
       <span className="pl-1 text-xs text-zinc-500">{label}</span>
       <button type="button" className={button} onClick={() => onChange(-1)} disabled={value <= range.min} aria-label={`${label}: mniej`}><Minus className="size-3" /></button>
       <span className="w-3 text-center font-mono text-xs tabular-nums">{value}</span>
@@ -72,7 +72,7 @@ export function ViewControls({ degrees, rootName, isMine, picker, connection, sh
       )}
       <div className="flex flex-wrap items-center gap-2">
       {picker}
-      {!connection && degrees && <div className={`${panelClass} divide-x divide-zinc-200 dark:divide-zinc-800`}>
+      {!connection && degrees && <div className={`${panelClass} grid grid-cols-2 sm:flex sm:divide-x sm:divide-zinc-200 sm:dark:divide-zinc-800`}>
         {controls.map(({ kind, label, describe }) => (
           <Stepper key={kind} label={label} value={degrees[kind]} range={DEGREE_RANGES[kind]} description={describe(degrees[kind])} onChange={(d) => onDegreeChange(kind, d)} />
         ))}

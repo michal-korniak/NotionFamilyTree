@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
 import type { PeopleById, TreeStats } from '../types/person';
 import type { Theme } from '../hooks/useTheme';
@@ -51,21 +51,25 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
       <div className="flex min-w-0 flex-1 justify-center">
         <SearchBar people={people} onSelect={onSelect} />
       </div>
-      <StatsBar stats={stats} />
+      <div className="hidden sm:block">
+        <StatsBar stats={stats} />
+      </div>
       <div className="flex items-center gap-1">
         <div className="hidden items-center sm:flex">
           <IconButton label="Cofnij (Ctrl+Z)" onClick={onUndo} disabled={!canUndo}><Undo2 className="size-4" /></IconButton>
           <IconButton label="Ponów (Ctrl+Y)" onClick={onRedo} disabled={!canRedo}><Redo2 className="size-4" /></IconButton>
         </div>
         <IconButton label="Dodaj osobę" onClick={onAddPerson}><UserPlus className="size-4" /></IconButton>
-        <IconButton label={theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny'} onClick={onToggleTheme}>
-          {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
-        </IconButton>
-        {notionPending !== undefined && (
-          <IconButton label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} onClick={onRefresh} disabled={refreshing}>
-            <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
+        <div className="hidden items-center gap-1 sm:flex">
+          <IconButton label={theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny'} onClick={onToggleTheme}>
+            {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </IconButton>
-        )}
+          {notionPending !== undefined && (
+            <IconButton label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} onClick={onRefresh} disabled={refreshing}>
+              <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </IconButton>
+          )}
+        </div>
         {notionPending !== undefined && (
           <button type="button" onClick={onOpenNotion} className={`relative ${buttonClass}`} title={notionPending ? `Zapisz w Notion: ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')}` : 'Notion jest aktualny'}>
             <NotionIcon className="size-3.5" />
@@ -73,14 +77,22 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
             <span aria-label={`Niewysłane zmiany: ${notionPending}`} className={`grid h-4 min-w-4 place-items-center rounded-full px-1 font-mono text-[10px] leading-none font-semibold tabular-nums ${notionPending > 0 ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>{notionPending}</span>
           </button>
         )}
-        <MoreMenu onChangeMe={onChangeMe} onClose={onReset} />
+        <MoreMenu compactItems={[
+          { label: 'Cofnij', icon: <Undo2 className="size-3.5" />, disabled: !canUndo, onSelect: onUndo },
+          { label: 'Ponów', icon: <Redo2 className="size-3.5" />, disabled: !canRedo, onSelect: onRedo },
+          ...(notionPending !== undefined ? [{ label: refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion', icon: <RefreshCw className="size-3.5" />, disabled: refreshing, onSelect: onRefresh }] : []),
+          { label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme },
+        ]} onChangeMe={onChangeMe} onClose={onReset} />
       </div>
     </header>
   );
 }
 
 // Close lives behind a menu so closing, which drops the local copy of the tree, is never a single stray click.
-function MoreMenu({ onChangeMe, onClose }: { onChangeMe: () => void; onClose: () => void }) {
+interface CompactMenuItem { label: string; icon: ReactNode; disabled?: boolean; onSelect: () => void }
+
+// On narrow screens the top bar has no room for undo/redo, refresh and the theme switch, so they move into this menu.
+function MoreMenu({ compactItems, onChangeMe, onClose }: { compactItems: CompactMenuItem[]; onChangeMe: () => void; onClose: () => void }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -102,6 +114,15 @@ function MoreMenu({ onChangeMe, onClose }: { onChangeMe: () => void; onClose: ()
       </button>
       {open && (
         <div role="menu" className="absolute top-full right-0 z-50 mt-1 w-64 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="sm:hidden">
+            {compactItems.map((entry) => (
+              <button key={entry.label} type="button" role="menuitem" disabled={entry.disabled} onClick={choose(entry.onSelect)} className={`${item} text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800`}>
+                {entry.icon}
+                {entry.label}
+              </button>
+            ))}
+            <div className="my-1 h-px bg-zinc-100 dark:bg-zinc-800" />
+          </div>
           <button type="button" role="menuitem" onClick={choose(onChangeMe)} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
             <UserRound className="size-3.5" />
             Zmień, kim jestem…
