@@ -1,6 +1,5 @@
 const TOKEN_KEY = 'nft:notion-token';
 const DATABASE_KEY = 'nft:notion-database';
-const AUTO_SYNC_KEY = 'nft:notion-autosync';
 
 function read(key: string): string {
   try { return localStorage.getItem(key) ?? ''; } catch { return ''; }
@@ -15,8 +14,6 @@ export const notionSettings = {
   databaseInput: () => read(DATABASE_KEY),
   save: (token: string, databaseInput: string) => { write(TOKEN_KEY, token); write(DATABASE_KEY, databaseInput); },
   forgetToken: () => write(TOKEN_KEY, null),
-  autoSync: () => read(AUTO_SYNC_KEY) === '1',
-  setAutoSync: (enabled: boolean) => write(AUTO_SYNC_KEY, enabled ? '1' : null),
 };
 
 // Accepts a full Notion URL (…/a1616bbe708a4677ad975293452652f5?v=…), a bare 32-character id or a dashed UUID.

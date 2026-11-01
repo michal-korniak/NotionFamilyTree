@@ -13,7 +13,6 @@ import { describeRelationship, describeRelationshipToMe, relationship, type Rela
 import { composeName, displayName } from './lib/names';
 import { TopBar } from './components/TopBar';
 import { PersonPickDialog } from './components/PersonPickDialog';
-import { useNotionAutoSync } from './hooks/useNotionAutoSync';
 import { notionSettings } from './lib/notion/notionSettings';
 import { FamilyGraph, type FocusRequest } from './components/FamilyGraph';
 import { PersonDrawer, type PersonEditActions } from './components/PersonDrawer';
@@ -27,7 +26,7 @@ import { generationDepth } from './lib/stats';
 import { NotionPushDialog } from './components/NotionPushDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { diffNotion } from './lib/notion/notionPush';
-import { describeUnion, type NotionImport } from './lib/notion/notionMapping';
+import { describeUnion, importNotionDatabase, type NotionImport } from './lib/notion/notionMapping';
 import { unionKey, type Gender, type UnionDetails } from './types/person';
 
 interface ExplorerProps {
@@ -87,10 +86,24 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const describeSpouseUnion = useCallback((personId: string, spouseId: string) => describeUnion({ ...tree.unions[unionKey(personId, spouseId)], ending: notionLink?.unions[unionKey(personId, spouseId)]?.ending }), [tree.unions, notionLink]);
   const unionAccess = useMemo(() => ({ get: (a: string, b: string) => tree.unions[unionKey(a, b)], save: (a: string, b: string, details: UnionDetails) => updateUnion(unionKey(a, b), details) }), [tree.unions, updateUnion]);
   const notionPending = useMemo(() => (tree.notion ? diffNotion(tree.notion, people, tree.unions).length : undefined), [tree.notion, people, tree.unions]);
-  const [autoSync, setAutoSync] = useState(notionSettings.autoSync);
-  const toggleAutoSync = useCallback(() => setAutoSync((on) => { notionSettings.setAutoSync(!on); return !on; }), []);
-  // An open form may still be filling in a new person, so nothing is sent until it is saved or cancelled.
-  const autoSyncStatus = useNotionAutoSync({ enabled: autoSync, paused: editingId !== null || notionDialogOpen, link: tree.notion, people, unions: tree.unions, pending: notionPending ?? 0, onPushed: setNotionLink });
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const refreshFromNotion = useCallback(async () => {
+    if (!tree.notion) return;
+    const token = notionSettings.token();
+    if (!token) { setRefreshError('Brak zapisanego tokenu Notion. Podaj go w oknie „Zapisz zmiany”.'); return; }
+    setRefreshing(true);
+    try {
+      const result = await importNotionDatabase(token, tree.notion.databaseId);
+      const failure = controller.loadImported(result.records, result.link.title, result.warnings, result.link);
+      if (failure) setRefreshError(failure);
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [tree.notion, controller]);
 
   useUndoShortcuts(undo, redo);
 
@@ -153,7 +166,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     return [
       { label: 'Drzewo tej osoby', icon: <Users />, onSelect: () => openFamily(personId) },
       ...(meId && !isMe ? [{ label: 'Powiązanie ze mną', icon: <Link2 />, onSelect: () => openConnectionTab(null, personId) }] : []),
-      { label: 'Powiązanie z inną osobą…', icon: <Waypoints />, onSelect: () => setConnectionFromId(personId) },
+      { label: 'Powiązanie z inną osobą', icon: <Waypoints />, onSelect: () => setConnectionFromId(personId) },
       'separator',
       { label: 'Edytuj dane', icon: <Pencil />, onSelect: () => { select(personId); setEditingId(personId); } },
       'separator',
@@ -195,7 +208,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} autoSync={autoSync} autoSyncStatus={autoSyncStatus} onToggleAutoSync={toggleAutoSync} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} />
+      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} />
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => setTabMenu({ id, x, y })} />
       <main className="relative flex-1 overflow-hidden">
         <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} hiddenRelatives={connection ? undefined : hiddenRelatives} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => setMenu({ x, y, personId: null })} />
@@ -213,9 +226,19 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
           <p>Osoba i jej powiązania zostaną usunięte. Możesz cofnąć przez Ctrl+Z.</p>
         </ConfirmDialog>
       )}
+      {refreshConfirmOpen && (
+        <ConfirmDialog title="Odświeżyć z Notion?" confirmLabel="Odrzuć zmiany i odśwież" danger onConfirm={() => { setRefreshConfirmOpen(false); void refreshFromNotion(); }} onCancel={() => setRefreshConfirmOpen(false)}>
+          <p>Masz niewysłane zmiany ({notionPending}). Odświeżenie wczyta dane z Notion od nowa i te zmiany zostaną utracone. Aby je zachować, najpierw użyj „Zapisz zmiany”.</p>
+        </ConfirmDialog>
+      )}
+      {refreshError && (
+        <ConfirmDialog title="Nie udało się odświeżyć" confirmLabel="OK" onConfirm={() => setRefreshError(null)} onCancel={() => setRefreshError(null)}>
+          <p>{refreshError}</p>
+        </ConfirmDialog>
+      )}
       {closeDialogOpen && (
         <ConfirmDialog title="Zamknąć to drzewo?" confirmLabel={notionPending || (notionPending === undefined && dirty) ? 'Odrzuć zmiany i zamknij' : 'Zamknij drzewo'} danger onConfirm={() => { setCloseDialogOpen(false); reset(); }} onCancel={() => setCloseDialogOpen(false)}>
-          {notionPending ? <p className="font-medium text-red-600 dark:text-red-400">Niewysłane do Notion zmiany ({notionPending}) zostaną utracone. Aby je zachować, najpierw użyj „Aktualizuj Notion”.</p> : null}
+          {notionPending ? <p className="font-medium text-red-600 dark:text-red-400">Niewysłane do Notion zmiany ({notionPending}) zostaną utracone. Aby je zachować, najpierw użyj „Zapisz zmiany”.</p> : null}
           {tree.notion ? <p>Lokalna kopia „{tree.sourceName}” zostanie usunięta z tej przeglądarki. Dane w Notion pozostaną bez zmian i w każdej chwili możesz je zaimportować ponownie.</p> : <p>Drzewo zostanie usunięte z tej przeglądarki.</p>}
         </ConfirmDialog>
       )}

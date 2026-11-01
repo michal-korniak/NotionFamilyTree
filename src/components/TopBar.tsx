@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, FileJson, Loader2, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
-import type { AutoSyncStatus } from '../hooks/useNotionAutoSync';
+import { FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
 import type { PeopleById, TreeStats } from '../types/person';
 import type { Theme } from '../hooks/useTheme';
 import { SearchBar } from './SearchBar';
@@ -17,9 +16,8 @@ interface TopBarProps {
   canUndo: boolean;
   canRedo: boolean;
   notionPending?: number;
-  autoSync: boolean;
-  autoSyncStatus: AutoSyncStatus;
-  onToggleAutoSync: () => void;
+  refreshing: boolean;
+  onRefresh: () => void;
   onOpenNotion: () => void;
   onToggleTheme: () => void;
   onSelect: (id: string) => void;
@@ -33,7 +31,7 @@ interface TopBarProps {
 
 const buttonClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900';
 
-export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, autoSync, autoSyncStatus, onToggleAutoSync, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset }: TopBarProps) {
+export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset }: TopBarProps) {
   return (
     <header className="relative z-20 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur sm:gap-4 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="flex min-w-0 items-center gap-2">
@@ -42,13 +40,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
         </button>
         <div className="hidden min-w-0 md:block">
           <button type="button" onClick={onGoHome} title="Przejdź do mojego drzewa" className="block text-sm leading-tight font-semibold hover:underline hover:underline-offset-2">NotionFamilyTree</button>
-          {notionPending !== undefined ? (
-            <div className="flex items-center gap-1 truncate font-mono text-[11px] leading-tight text-zinc-500" title={notionPending ? `${sourceName} — ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')} jeszcze nie w Notion` : `${sourceName} — zgodne z Notion`}>
-              <NotionIcon className="size-3 shrink-0" />
-              <span className="max-w-40 truncate">{sourceName}</span>
-              {notionPending > 0 && <span className="shrink-0 text-amber-600 dark:text-amber-400">• niewysłane: {notionPending}</span>}
-            </div>
-          ) : (
+          {notionPending === undefined && (
             <div className="flex items-center gap-1 truncate font-mono text-[11px] leading-tight text-zinc-500" title={sourceName}>
               <FileJson className="size-3 shrink-0" />
               <span className="max-w-40 truncate">{sourceName}</span>
@@ -70,21 +62,25 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </IconButton>
         {notionPending !== undefined && (
-          <button type="button" onClick={onOpenNotion} className={`relative ${buttonClass}`} title={autoSyncStatus.kind === 'error' ? `Automatyczna synchronizacja nie powiodła się: ${autoSyncStatus.message}` : autoSyncStatus.kind === 'syncing' ? 'Synchronizuję z Notion…' : notionPending ? `Wyślij do Notion: ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')}` : 'Notion jest aktualny'}>
-            {autoSyncStatus.kind === 'syncing' ? <Loader2 className="size-3.5 animate-spin" /> : <NotionIcon className="size-3.5" />}
-            {autoSyncStatus.kind === 'error' && <span className="absolute -top-1 -right-1 size-2.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-zinc-950" />}
-            <span className="hidden lg:inline">Aktualizuj</span>
+          <IconButton label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} onClick={onRefresh} disabled={refreshing}>
+            <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </IconButton>
+        )}
+        {notionPending !== undefined && (
+          <button type="button" onClick={onOpenNotion} className={`relative ${buttonClass}`} title={notionPending ? `Zapisz w Notion: ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')}` : 'Notion jest aktualny'}>
+            <NotionIcon className="size-3.5" />
+            <span className="hidden lg:inline">Zapisz zmiany</span>
             <span aria-label={`Niewysłane zmiany: ${notionPending}`} className={`grid h-4 min-w-4 place-items-center rounded-full px-1 font-mono text-[10px] leading-none font-semibold tabular-nums ${notionPending > 0 ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>{notionPending}</span>
           </button>
         )}
-        <MoreMenu autoSync={notionPending !== undefined ? autoSync : undefined} onToggleAutoSync={onToggleAutoSync} onChangeMe={onChangeMe} onClose={onReset} />
+        <MoreMenu onChangeMe={onChangeMe} onClose={onReset} />
       </div>
     </header>
   );
 }
 
 // Close lives behind a menu so closing, which drops the local copy of the tree, is never a single stray click.
-function MoreMenu({ autoSync, onToggleAutoSync, onChangeMe, onClose }: { autoSync?: boolean; onToggleAutoSync: () => void; onChangeMe: () => void; onClose: () => void }) {
+function MoreMenu({ onChangeMe, onClose }: { onChangeMe: () => void; onClose: () => void }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -106,13 +102,6 @@ function MoreMenu({ autoSync, onToggleAutoSync, onChangeMe, onClose }: { autoSyn
       </button>
       {open && (
         <div role="menu" className="absolute top-full right-0 z-50 mt-1 w-64 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
-          {autoSync !== undefined && (
-            <button type="button" role="menuitemcheckbox" aria-checked={autoSync} onClick={onToggleAutoSync} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
-              <RefreshCw className="size-3.5" />
-              <span className="flex-1 whitespace-nowrap">Automatyczna synchronizacja</span>
-              {autoSync && <Check className="size-3.5 text-teal-600 dark:text-teal-400" />}
-            </button>
-          )}
           <button type="button" role="menuitem" onClick={choose(onChangeMe)} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
             <UserRound className="size-3.5" />
             Zmień, kim jestem…

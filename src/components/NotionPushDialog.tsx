@@ -25,7 +25,7 @@ const kindLabel: Record<NotionChange['kind'], { label: string; className: string
   'union-trash': { label: 'Związek do kosza', className: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
 };
 
-type Phase = { kind: 'review' } | { kind: 'pushing'; done: number; total: number } | { kind: 'done'; applied: number } | { kind: 'failed'; error: string };
+type Phase = { kind: 'review' } | { kind: 'pushing'; done: number; total: number } | { kind: 'done'; saved: number } | { kind: 'failed'; error: string };
 
 export function NotionPushDialog({ link, people, unions, onPushed, onClose }: NotionPushDialogProps) {
   const changes = useMemo(() => diffNotion(link, people, unions), [link, people, unions]);
@@ -42,10 +42,11 @@ export function NotionPushDialog({ link, people, unions, onPushed, onClose }: No
   const push = async () => {
     if (!token.trim()) return;
     notionSettings.save(token.trim(), notionSettings.databaseInput());
-    setPhase({ kind: 'pushing', done: 0, total: changes.length });
+    const saved = changes.length;
+    setPhase({ kind: 'pushing', done: 0, total: 1 });
     const result = await pushToNotion(token.trim(), link, people, unions, (done, total) => setPhase({ kind: 'pushing', done, total }));
     onPushed(result.link);
-    setPhase(result.error ? { kind: 'failed', error: result.applied ? `${result.error} Przed błędem zapisano: ${result.applied}; ponowienie wyśle resztę.` : result.error } : { kind: 'done', applied: result.applied });
+    setPhase(result.error ? { kind: 'failed', error: result.applied ? `${result.error} Część zmian zapisano przed błędem; ponowienie wyśle pozostałe.` : result.error } : { kind: 'done', saved });
   };
 
   return (
@@ -54,7 +55,7 @@ export function NotionPushDialog({ link, people, unions, onPushed, onClose }: No
         <div className="flex items-center gap-2.5 border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
           <NotionIcon className="size-5" />
           <div className="min-w-0 flex-1">
-            <h2 id="notion-push-title" className="text-sm font-semibold">Aktualizuj Notion</h2>
+            <h2 id="notion-push-title" className="text-sm font-semibold">Zapisz zmiany w Notion</h2>
             <p className="truncate text-xs text-zinc-500">{link.title} · ostatnia synchronizacja {new Date(link.syncedAt).toLocaleString('pl-PL')}</p>
           </div>
           <button type="button" onClick={onClose} disabled={busy} aria-label="Zamknij" className="grid size-7 place-items-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><X className="size-4" /></button>
@@ -65,10 +66,10 @@ export function NotionPushDialog({ link, people, unions, onPushed, onClose }: No
             <div className="flex flex-col items-center py-6 text-center">
               <CheckCircle2 className="size-8 text-teal-500" />
               <p className="mt-2 text-sm font-medium">Notion jest aktualny</p>
-              <p className="mt-1 text-xs text-zinc-500">Wysłano żądań: {phase.applied}.</p>
+              <p className="mt-1 text-xs text-zinc-500">Zapisano {countOf(phase.saved, 'zmianę', 'zmiany', 'zmian')}.</p>
             </div>
           ) : changes.length === 0 ? (
-            <p className="py-6 text-center text-sm text-zinc-500">Brak zmian do zaktualizowania.</p>
+            <p className="py-6 text-center text-sm text-zinc-500">Brak zmian do zapisania.</p>
           ) : (
             <>
               <p className="mb-2 text-xs text-zinc-500">{countOf(changes.length, 'zmiana', 'zmiany', 'zmian')} od ostatniej synchronizacji:</p>
@@ -104,7 +105,7 @@ export function NotionPushDialog({ link, people, unions, onPushed, onClose }: No
             <>
               <button type="button" onClick={onClose} disabled={busy} className="h-8 rounded-md px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800">Anuluj</button>
               <button type="button" onClick={() => void push()} disabled={busy || !token.trim()} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300">
-                {phase.kind === 'pushing' ? <><Loader2 className="size-3.5 animate-spin" />Aktualizowanie {phase.done}/{phase.total}…</> : phase.kind === 'failed' ? 'Ponów' : `Aktualizuj (${changes.length})`}
+                {phase.kind === 'pushing' ? <><Loader2 className="size-3.5 animate-spin" />Zapisywanie… {Math.round((phase.done / Math.max(phase.total, 1)) * 100)}%</> : phase.kind === 'failed' ? 'Ponów' : `Zapisz zmiany (${changes.length})`}
               </button>
             </>
           )}
