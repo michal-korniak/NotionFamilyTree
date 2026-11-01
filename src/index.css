@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  font-family: var(--font-sans);
+}
+
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--color-zinc-300);
+  --xy-controls-button-background-color: var(--color-white);
+  --xy-controls-button-border-color: var(--color-zinc-200);
+  --xy-minimap-background-color: var(--color-white);
+}
+
+.dark .react-flow {
+  --xy-edge-stroke: var(--color-zinc-700);
+  --xy-controls-button-background-color: var(--color-zinc-900);
+  --xy-controls-button-background-color-hover: var(--color-zinc-800);
+  --xy-controls-button-color: var(--color-zinc-300);
+  --xy-controls-button-border-color: var(--color-zinc-800);
+  --xy-minimap-background-color: var(--color-zinc-900);
+}
+
+.react-flow__controls, .react-flow__minimap {
+  @apply overflow-hidden rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800;
+}
+
+.react-flow__edge-path {
+  transition: stroke 150ms, opacity 150ms;
+}
+
+.react-flow__edge.edge-spouse .react-flow__edge-path {
+  stroke-dasharray: 4 4;
+}
+
+.react-flow__edge.edge-highlight .react-flow__edge-path {
+  stroke-width: 1.75;
+}
+
+.react-flow__edge.edge-rel-parent .react-flow__edge-path { stroke: var(--color-indigo-500); }
+.react-flow__edge.edge-rel-spouse .react-flow__edge-path { stroke: var(--color-amber-500); }
+.react-flow__edge.edge-rel-child .react-flow__edge-path { stroke: var(--color-teal-500); }
+
+.dark .react-flow__edge.edge-rel-parent .react-flow__edge-path { stroke: var(--color-indigo-400); }
+.dark .react-flow__edge.edge-rel-spouse .react-flow__edge-path { stroke: var(--color-amber-400); }
+.dark .react-flow__edge.edge-rel-child .react-flow__edge-path { stroke: var(--color-teal-400); }
+
+.react-flow__edge.edge-dimmed .react-flow__edge-path {
+  opacity: 0.25;
+}
+
+.react-flow__node:focus-visible {
+  outline: none;
+}
+
+.react-flow__edge.edge-spouse:not(.edge-highlight) .react-flow__edge-path {
+  stroke: var(--color-zinc-400);
+}
+
+.dark .react-flow__edge.edge-spouse:not(.edge-highlight) .react-flow__edge-path {
+  stroke: var(--color-zinc-600);
+}
