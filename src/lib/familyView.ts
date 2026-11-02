@@ -82,15 +82,6 @@ export function restrictTo(people: PeopleById, members: Set<string>): PeopleById
   return result;
 }
 
-export function hiddenRelativeCounts(people: PeopleById, members: Set<string>): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const id of members) {
-    const person = people.get(id)!;
-    const hidden = [...person.parents, ...person.children, ...person.spouses].filter((relative) => people.has(relative) && !members.has(relative)).length;
-    if (hidden) counts.set(id, hidden);
-  }
-  return counts;
-}
 
 // Without a remembered focus, start from the person with the most direct relatives: usually the middle of the family rather than an isolated in-law.
 export function defaultRoot(people: PeopleById): string | null {

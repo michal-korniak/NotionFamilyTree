@@ -20,7 +20,7 @@ import { EmptyTree } from './components/EmptyTree';
 import { ViewControls } from './components/ViewControls';
 import { HOME_TAB_ID, useViewPrefs, type ViewTab } from './hooks/useViewPrefs';
 import { TabBar, type TabInfo } from './components/TabBar';
-import { defaultRoot, familyMembers, hiddenRelativeCounts, isPhoneLayout, restrictTo } from './lib/familyView';
+import { defaultRoot, familyMembers, isPhoneLayout, restrictTo } from './lib/familyView';
 import { generationDepth } from './lib/stats';
 import { NotionPushDialog } from './components/NotionPushDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -79,7 +79,6 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const connection = useMemo(() => (connectFromId && connectWithId && people.has(connectWithId) ? relationship(people, connectFromId, connectWithId, unionKindOf) : null), [people, connectFromId, connectWithId, unionKindOf]);
   // With both sides of "Powiązanie" chosen, only the chain of people linking them is drawn.
   const visible = useMemo(() => (connection ? restrictTo(people, new Set(connection.path)) : rootId && degrees ? restrictTo(people, familyMembers(people, rootId, degrees)) : activeTab.kind === 'connection' ? restrictTo(people, new Set([connectFromId, connectWithId].filter((id): id is string => Boolean(id)))) : people), [connection, people, rootId, degrees, activeTab.kind, connectFromId, connectWithId]);
-  const hiddenRelatives = useMemo(() => hiddenRelativeCounts(people, new Set(visible.keys())), [people, visible]);
   const layout = useMemo(() => computeLayout(visible), [visible]);
   const stats = useMemo(() => computeStats(people, generationDepth(people)), [people]);
   const viewKey = activeTab.kind === 'connection' ? `${activeTab.id}:${connectFromId}:${connectWithId}` : `${activeTab.id}:${rootId}:${Object.values(degrees ?? {}).join(':')}`;
@@ -277,7 +276,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
       <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} />
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => { if (!isPhoneLayout()) setTabMenu({ id, x, y }); }} />
       <main className="relative flex-1 overflow-hidden">
-        <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} hiddenRelatives={connection ? undefined : hiddenRelatives} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { if (isPhoneLayout()) return; select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => { if (!isPhoneLayout()) setMenu({ x, y, personId: null }); }} />
+        <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { if (isPhoneLayout()) return; select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => { if (!isPhoneLayout()) setMenu({ x, y, personId: null }); }} />
         {people.size > 0 && <ViewControls connection={connection && connectWithId && connectFromId ? { fromName: connectFromId === meId ? 'Ja' : displayName(people.get(connectFromId)!), fromIsMe: connectFromId === meId, name: displayName(people.get(connectWithId)!), description: describeRelationship(connection) } : undefined} degrees={degrees} isMine={activeTab.id === HOME_TAB_ID} rootName={rootId && people.has(rootId) ? displayName(people.get(rootId)!) : undefined} shownCount={visible.size} totalCount={people.size} onDegreeChange={changeDegree} />}
         {people.size === 0 && <EmptyTree onAddPerson={addPerson} />}
         <WarningBanner warnings={warnings} onDismiss={dismissWarnings} />

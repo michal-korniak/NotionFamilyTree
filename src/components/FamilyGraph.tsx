@@ -21,7 +21,6 @@ interface FamilyGraphProps {
   focusRequest: FocusRequest | null;
   theme: Theme;
   viewKey: string;
-  hiddenRelatives?: ReadonlyMap<string, number>;
   unionKindOf?: (a: string, b: string) => string | undefined;
   onSelect: (id: string | null) => void;
   onOpenFamily?: (id: string) => void;
@@ -97,14 +96,14 @@ function highlightFor(id: string, selectedId: string | null, relations: Map<stri
   return relations.get(id) ?? 'dimmed';
 }
 
-function Graph({ people, layout, selectedId, focusRequest, theme, viewKey, hiddenRelatives, unionKindOf, onSelect, onOpenFamily, onNodeMenu, onPaneMenu }: FamilyGraphProps) {
+function Graph({ people, layout, selectedId, focusRequest, theme, viewKey, unionKindOf, onSelect, onOpenFamily, onNodeMenu, onPaneMenu }: FamilyGraphProps) {
   const { setCenter, fitView } = useReactFlow();
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportPinnedRef = useRef(false);
 
   const relations = useMemo(() => (selectedId ? relationsTo(people, selectedId) : new Map<string, Relation>()), [people, selectedId]);
 
-  const nodes = useMemo<PersonFlowNode[]>(() => [...people.values()].map((person) => ({ id: person.id, type: 'person', position: layout.positions.get(person.id) ?? { x: 0, y: 0 }, data: { person, highlight: highlightFor(person.id, selectedId, relations), hiddenRelatives: hiddenRelatives?.get(person.id), unionKind: selectedId && relations.get(person.id) === 'spouse' ? unionKindOf?.(selectedId, person.id) : undefined }, draggable: false, connectable: false, width: NODE_WIDTH, height: NODE_HEIGHT, zIndex: NODE_Z_INDEX })), [people, layout, selectedId, relations, hiddenRelatives, unionKindOf]);
+  const nodes = useMemo<PersonFlowNode[]>(() => [...people.values()].map((person) => ({ id: person.id, type: 'person', position: layout.positions.get(person.id) ?? { x: 0, y: 0 }, data: { person, highlight: highlightFor(person.id, selectedId, relations), unionKind: selectedId && relations.get(person.id) === 'spouse' ? unionKindOf?.(selectedId, person.id) : undefined }, draggable: false, connectable: false, width: NODE_WIDTH, height: NODE_HEIGHT, zIndex: NODE_Z_INDEX })), [people, layout, selectedId, relations, unionKindOf]);
 
   const routes = useMemo(() => computeFamilyRoutes(people, layout), [people, layout]);
   const edges = useMemo(() => buildEdges(people, layout, routes, selectedId), [people, layout, routes, selectedId]);

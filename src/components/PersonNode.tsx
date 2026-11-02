@@ -9,7 +9,7 @@ import { relationLabel, relationStyles, type Relation } from '../lib/relationCol
 
 export type HighlightState = 'selected' | Relation | 'dimmed' | 'normal';
 
-export type PersonNodeData = { person: Person; highlight: HighlightState; hiddenRelatives?: number; unionKind?: string };
+export type PersonNodeData = { person: Person; highlight: HighlightState; unionKind?: string };
 
 export type PersonFlowNode = Node<PersonNodeData, 'person'>;
 
@@ -41,7 +41,7 @@ function isRelation(highlight: HighlightState): highlight is Relation {
 const hiddenHandle = 'size-1! min-h-0! min-w-0! border-0! bg-transparent!';
 
 function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
-  const { person, highlight, hiddenRelatives, unionKind } = data;
+  const { person, highlight, unionKind } = data;
   return (
     <div style={{ width: NODE_WIDTH, height: NODE_HEIGHT }} className={`group relative flex cursor-pointer items-center gap-3 rounded-lg border px-3 transition-all duration-150 ${genderBackground[person.gender]} ${stateClasses(highlight, person.gender)}`}>
       <Handle type="target" position={Position.Top} id="top" className={hiddenHandle} isConnectable={false} />
@@ -49,7 +49,6 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
       <Handle type="target" position={Position.Left} id="left" className={hiddenHandle} isConnectable={false} />
       <Handle type="source" position={Position.Right} id="right" className={hiddenHandle} isConnectable={false} />
       {isRelation(highlight) && <span className={`pointer-events-none absolute -top-2.5 left-3 rounded-full border px-2 py-px text-[10px] leading-4 font-medium ${relationStyles[highlight].badge}`}>{relationLabel(highlight, person.gender, unionKind)}</span>}
-      {hiddenRelatives ? <span title={`Niewidoczni krewni: ${hiddenRelatives} — kliknij dwukrotnie, aby pokazać rodzinę tej osoby`} className="pointer-events-auto absolute -right-2 -bottom-2 rounded-full border border-zinc-200 bg-white px-1.5 font-mono text-[10px] leading-4 text-zinc-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">+{hiddenRelatives}</span> : null}
       <Avatar name={displayName(person)} gender={person.gender} deceased={isDeceased(person)} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100" title={displayName(person)}>{displayName(person)}</div>

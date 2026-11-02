@@ -14,6 +14,13 @@ html, body, #root {
   height: 100%;
 }
 
+/* Tailwind 4 dropped the pointer cursor on buttons; everything clickable here is a button, so it comes back for all of them at once. */
+@layer base {
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
+
 /* Without an explicit color scheme, mobile Chrome and Samsung Internet auto-darken the light theme when the phone is in dark mode. */
 html {
   color-scheme: only light;
