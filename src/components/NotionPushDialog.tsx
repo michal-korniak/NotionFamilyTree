@@ -76,7 +76,7 @@ export function NotionPushDialog({ link, people, unions, graves, notionEdits, ph
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+    <div className="fixed inset-0 z-50 grid grid-cols-1 place-items-center bg-zinc-950/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="notion-push-title" className="flex max-h-[85vh] w-full max-w-md flex-col rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center gap-2.5 border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
           <NotionIcon className="size-5" />

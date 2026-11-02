@@ -30,7 +30,7 @@ export function WhoAreYouDialog({ people, currentMeId, onChoose, onCreate, onCan
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (onCancel && e.target === e.currentTarget) onCancel(); }} onKeyDown={(e) => { if (onCancel && e.key === 'Escape') onCancel(); }}>
+    <div className="fixed inset-0 z-50 grid grid-cols-1 place-items-center bg-zinc-950/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (onCancel && e.target === e.currentTarget) onCancel(); }} onKeyDown={(e) => { if (onCancel && e.key === 'Escape') onCancel(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="who-title" className="flex max-h-[85vh] w-full max-w-md flex-col rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
           <div className="grid size-9 place-items-center rounded-full bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"><UserRound className="size-4" /></div>
