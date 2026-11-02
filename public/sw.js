@@ -12,6 +12,8 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || !url.href.startsWith(self.registration.scope)) return;
+  // The app compares this with its own build to notice a new deploy, so it must never come from a cache.
+  if (url.pathname.endsWith('/version.json')) return;
 
   // The page itself comes from the network first, so a new deploy shows up at once; the cached copy is only for being offline.
   if (request.mode === 'navigate') {

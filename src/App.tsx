@@ -29,6 +29,7 @@ import { PhotosContext, usePhotoQueue } from './hooks/usePhotoQueue';
 import { usePhotoCache } from './hooks/usePhotoCache';
 import { describeUnion, photoOwnerPage, refreshNotionDatabase, type NotionImport, type NotionRefresh } from './lib/notion/notionMapping';
 import { CemeteriesDialog } from './components/CemeteriesDialog';
+import { useAppUpdate } from './hooks/useAppUpdate';
 import { fullPhotoUrl } from './lib/notion/notionPhotos';
 import { NotionClient } from './lib/notion/notionClient';
 import { toGedcom } from './lib/gedcom';
@@ -146,7 +147,8 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
 
   // Pulls others' changes from Notion in the background and never saves. With unsaved changes a reload would drop them, so it only checks
   // whether Notion changed the same people; the save itself checks again before writing anything.
-  const lastRefresh = useRef(Date.now());
+  // Starts at 0 so the tree is refreshed as soon as it opens: a new app version may read columns the stored copy lacks.
+  const lastRefresh = useRef(0);
   const periodicRefresh = useRef<() => void>(() => undefined);
   periodicRefresh.current = () => {
     if (refreshing || notionDialogOpen || document.visibilityState !== 'visible' || Date.now() - lastRefresh.current < AUTO_REFRESH_MS) return;
@@ -157,6 +159,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     if (!tree.notion) return;
     const timer = window.setInterval(() => periodicRefresh.current(), AUTO_REFRESH_CHECK_MS);
     const onVisible = () => periodicRefresh.current();
+    periodicRefresh.current();
     document.addEventListener('visibilitychange', onVisible);
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [tree.notion !== undefined]);
@@ -284,6 +287,8 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     updateGrave(id, null);
   }, [people, commit, updateGrave]);
 
+  const updateWaiting = useAppUpdate(editingId === null && !notionDialogOpen && !cemeteriesOpen && !refreshing && !refreshConfirmOpen && !closeDialogOpen && deleteCandidate === null);
+
   const handleReset = useCallback(() => {
     if (notionPending !== undefined || dirty) setCloseDialogOpen(true); else reset();
   }, [dirty, notionPending, reset]);
@@ -323,6 +328,12 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
       {tabMenu && tabMenuItems(tabMenu.id).length > 0 && <ContextMenu x={tabMenu.x} y={tabMenu.y} items={tabMenuItems(tabMenu.id)} onClose={() => setTabMenu(null)} />}
       {menu && <ContextMenu x={menu.x} y={menu.y} title={menu.personId && people.has(menu.personId) ? displayName(people.get(menu.personId)!) : undefined} items={menuItems(menu.personId)} onClose={closeMenu} />}
       {connectionFromId && people.has(connectionFromId) && <PersonPickDialog title={`Powiązanie: ${displayName(people.get(connectionFromId)!)} ↔ …`} people={people} exclude={new Set([connectionFromId])} onPick={(toId) => { openConnectionTab(connectionFromId, toId); setConnectionFromId(null); if (isPhoneLayout()) close(); }} onClose={() => setConnectionFromId(null)} />}
+      {updateWaiting && (
+        <div role="status" className="fixed bottom-4 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+          <span>Jest nowa wersja aplikacji. Wczyta się po zamknięciu formularza.</span>
+          <button type="button" onClick={() => location.reload()} className="shrink-0 font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100">Odśwież teraz</button>
+        </div>
+      )}
       {cemeteriesOpen && <CemeteriesDialog people={people} graves={tree.graves} withPhotos={Boolean(tree.notion)} onSelectPerson={(id) => { setCemeteriesOpen(false); selectAndFocus(id); }} onSaveGrave={updateGrave} onMerge={mergeGraves} onRemoveGrave={removeGrave} onClose={() => setCemeteriesOpen(false)} />}
       {deleteCandidate && people.has(deleteCandidate) && (
         <ConfirmDialog title={`Usunąć: ${displayName(people.get(deleteCandidate)!)}?`} confirmLabel="Usuń" danger onConfirm={() => { commit(deletePerson(people, deleteCandidate)); if (selectedId === deleteCandidate) close(); setDeleteCandidate(null); }} onCancel={() => setDeleteCandidate(null)}>

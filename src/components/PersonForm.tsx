@@ -6,6 +6,7 @@ import { composeName, displayName, nameParts } from '../lib/names';
 import { GRAVES, PEOPLE } from '../lib/notion/notionMapping';
 import { buriedIn, cemeteryGroups, familyGraveIds, graveTitle, newGraveId } from '../lib/graves';
 import { PhotoGallery } from './PhotoGallery';
+import { usePhotoDraft } from '../hooks/usePhotoQueue';
 import { CemeteryInput } from './CemeteryInput';
 
 interface PersonFormProps {
@@ -85,6 +86,8 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
   const [graveId, setGraveId] = useState(person.graveId && graves[person.graveId] ? person.graveId : '');
   const [graveValues, setGraveValues] = useState(() => toGraveValues(person.graveId ? graves[person.graveId] : undefined));
   const isNewGrave = graveId !== '' && !graves[graveId];
+  const photoOwners = graveId ? [person.id, graveId] : [person.id];
+  const photoDraft = usePhotoDraft(photoOwners);
   const buriedWith = useMemo(() => (graveId ? buriedIn(people, graveId).filter((other) => other.id !== person.id) : []), [people, graveId, person.id]);
 
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) => setValues((v) => ({ ...v, [key]: value }));
@@ -102,6 +105,7 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
     if (Object.keys(found).length) return;
     const details: PersonDetails = { name: fullName, givenNames: values.givenNames.trim(), birthSurname: values.birthSurname.trim(), marriedSurname: values.marriedSurname.trim(), gender: values.gender ?? 'U', birthDate: optional(values.birthDate), deathDate: optional(values.deathDate), birthPlace: optional(values.birthPlace), deathPlace: optional(values.deathPlace), graveId: graveId || undefined, biography: optional(values.biography) };
     const grave = graveId ? { id: graveId, details: { name: graveTitle(undefined, [...buriedWith, { ...person, ...details }]), cemetery: optional(graveValues.cemetery), info: optional(graveValues.info) } } : undefined;
+    photoDraft.keep(photoOwners);
     onSave(details, grave);
   };
 

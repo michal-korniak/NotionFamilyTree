@@ -71,12 +71,12 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           <IconButton label={theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny'} onClick={onToggleTheme}>
             {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </IconButton>
-          {notionPending !== undefined && (
-            <IconButton label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} onClick={onRefresh} disabled={refreshing}>
-              <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
-            </IconButton>
-          )}
         </div>
+        {notionPending !== undefined && (
+          <IconButton label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} onClick={onRefresh} disabled={refreshing}>
+            <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </IconButton>
+        )}
         {notionPending !== undefined && (
           <button type="button" onClick={onOpenNotion} className={`relative ${buttonClass}`} title={notionConflicts.length ? `Ktoś zmienił w Notion: ${notionConflicts.join(', ')}. Zapis wczyta aktualne dane i odrzuci niezapisane zmiany.` : notionPending ? `Zapisz w Notion: ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')}` : 'Notion jest aktualny'}>
             <NotionIcon className="size-3.5" />
@@ -89,7 +89,6 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           { label: 'Dodaj osobę', icon: <UserPlus className="size-3.5" />, onSelect: onAddPerson },
           { label: 'Cofnij', icon: <Undo2 className="size-3.5" />, disabled: !canUndo, onSelect: onUndo },
           { label: 'Ponów', icon: <Redo2 className="size-3.5" />, disabled: !canRedo, onSelect: onRedo },
-          ...(notionPending !== undefined ? [{ label: refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion', icon: <RefreshCw className="size-3.5" />, disabled: refreshing, onSelect: onRefresh }] : []),
           { label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme },
           { label: 'Zamknij wszystkie karty', icon: <X className="size-3.5" />, disabled: !onCloseAllTabs, onSelect: () => onCloseAllTabs?.() },
         ]} onChangeMe={onChangeMe} onShowCemeteries={onShowCemeteries} onExportGedcom={onExportGedcom} onClose={onReset} />

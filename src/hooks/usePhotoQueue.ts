@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { compressImage, makeThumbnail } from '../lib/notion/notionPhotos';
 import { newPhotoOpId, photoFileKey, photoQueue, type PhotoOp } from '../lib/photoQueue';
 import type { StoredPhoto } from '../types/person';
@@ -58,6 +58,29 @@ export interface PhotosContextValue {
 }
 
 export const PhotosContext = createContext<PhotosContextValue | null>(null);
+
+// Photo changes made in a form are queued right away (so they survive a reload), but belong to that form: unless it is saved, closing it
+// drops what it queued. Saving keeps only the changes for the owners it ends with, e.g. not those of a grave picked and then abandoned.
+export function usePhotoDraft(owners: readonly string[]) {
+  const { queue } = usePhotosContext();
+  const before = useRef<ReadonlySet<string> | null>(null);
+  if (before.current === null) before.current = new Set(queue.ops.map((op) => op.id));
+  const touched = useRef(new Set<string>());
+  for (const owner of owners) touched.current.add(owner);
+  const latest = useRef(queue);
+  latest.current = queue;
+  const kept = useRef(false);
+
+  const dropAddedFor = useCallback((drop: (owner: string) => boolean) => {
+    const { ops, drop: dropOps } = latest.current;
+    void dropOps(ops.filter((op) => !before.current!.has(op.id) && touched.current.has(op.personId) && drop(op.personId)).map((op) => op.id));
+  }, []);
+
+  useEffect(() => () => { if (!kept.current) dropAddedFor(() => true); }, [dropAddedFor]);
+
+  const keep = useCallback((finalOwners: readonly string[]) => { kept.current = true; dropAddedFor((owner) => !finalOwners.includes(owner)); }, [dropAddedFor]);
+  return { keep };
+}
 
 export function usePhotosContext(): PhotosContextValue {
   const value = useContext(PhotosContext);

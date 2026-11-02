@@ -79,6 +79,7 @@ export function RelativeList({ title, relation, ids, people, onSelect, editing, 
                   </button>
                 )}
               </div>
+              {unionEditor && editingUnionOf !== person.id && unionEditor.get(person.id)?.notes?.trim() && <p className="-mt-1 px-2.5 pb-2 pl-12 text-xs leading-relaxed whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">{unionEditor.get(person.id)!.notes!.trim()}</p>}
               {unionEditor && editingUnionOf === person.id && <UnionForm initial={unionEditor.get(person.id) ?? {}} onSave={(details) => { unionEditor.save(person.id, details); setEditingUnionOf(null); }} onCancel={() => setEditingUnionOf(null)} />}
             </li>
           ))}

@@ -6,7 +6,7 @@ import { formatLifeYears, isDeceased } from '../lib/dates';
 import { displayName } from '../lib/names';
 import { countOf } from '../lib/plural';
 import { GRAVES } from '../lib/notion/notionMapping';
-import { usePhotosContext } from '../hooks/usePhotoQueue';
+import { usePhotoDraft, usePhotosContext } from '../hooks/usePhotoQueue';
 import { Avatar } from './Avatar';
 import { PhotoGallery } from './PhotoGallery';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -75,6 +75,21 @@ function BuriedList({ buried, onSelectPerson }: { buried: Person[]; onSelectPers
         );
       })}
     </ul>
+  );
+}
+
+function GraveEditor({ id, values, graves, withPhotos, shared, onChange, onCancel, onSave }: { id: string; values: GraveValues; graves: Record<string, GraveDetails>; withPhotos: boolean; shared: boolean; onChange: (values: GraveValues) => void; onCancel: () => void; onSave: () => void }) {
+  const photoDraft = usePhotoDraft([id]);
+  return (
+    <li className="space-y-3 rounded-lg border border-zinc-300 px-3 py-3 dark:border-zinc-700">
+      <GraveFields values={values} graves={graves} onChange={onChange} />
+      {withPhotos && <div><span className="mb-1 block text-[11px] font-medium tracking-wider text-zinc-500 uppercase">Zdjęcie nagrobka</span><PhotoGallery personId={id} property={GRAVES.photos} addLabel="Dodaj zdjęcie nagrobka" /></div>}
+      {shared && <p className="text-xs text-zinc-500">Zmiany dotyczą wszystkich pochowanych w tym grobie.</p>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className={secondaryButton}>Anuluj</button>
+        <button type="button" onClick={() => { photoDraft.keep([id]); onSave(); }} className={primaryButton}>Zapisz</button>
+      </div>
+    </li>
   );
 }
 
@@ -193,17 +208,7 @@ export function CemeteriesDialog({ people, graves, withPhotos, onSelectPerson, o
                     {group.graves.map(({ id, grave, buried }) => {
                       const title = graveTitle(grave, buried);
                       const selected = selecting?.includes(id) ?? false;
-                      if (editing?.id === id) return (
-                        <li key={id} className="space-y-3 rounded-lg border border-zinc-300 px-3 py-3 dark:border-zinc-700">
-                          <GraveFields values={editing.values} graves={graves} onChange={(values) => setEditing({ id, values })} />
-                          {withPhotos && <div><span className="mb-1 block text-[11px] font-medium tracking-wider text-zinc-500 uppercase">Zdjęcie nagrobka</span><PhotoGallery personId={id} property={GRAVES.photos} addLabel="Dodaj zdjęcie nagrobka" /></div>}
-                          {buried.length > 1 && <p className="text-xs text-zinc-500">Zmiany dotyczą wszystkich pochowanych w tym grobie.</p>}
-                          <div className="flex justify-end gap-2">
-                            <button type="button" onClick={() => setEditing(null)} className={secondaryButton}>Anuluj</button>
-                            <button type="button" onClick={() => { onSaveGrave(id, { ...toDetails(editing.values), name: graveTitle(grave, buried) }); setEditing(null); }} className={primaryButton}>Zapisz</button>
-                          </div>
-                        </li>
-                      );
+                      if (editing?.id === id) return <GraveEditor key={id} id={id} values={editing.values} graves={graves} withPhotos={withPhotos} shared={buried.length > 1} onChange={(values) => setEditing({ id, values })} onCancel={() => setEditing(null)} onSave={() => { onSaveGrave(id, { ...toDetails(editing.values), name: graveTitle(grave, buried) }); setEditing(null); }} />;
                       return (
                         <li key={id} className={`rounded-lg border px-3 py-2 ${selected ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-300 dark:bg-zinc-800/50' : 'border-zinc-200 dark:border-zinc-800'}`}>
                           <div className="flex items-start gap-2">
