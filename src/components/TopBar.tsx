@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
+import { Download, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
 import type { PeopleById, TreeStats } from '../types/person';
 import type { Theme } from '../hooks/useTheme';
 import { SearchBar } from './SearchBar';
@@ -7,6 +7,7 @@ import { StatsBar } from './StatsBar';
 import { IconButton } from './IconButton';
 import { NotionIcon } from './NotionIcon';
 import { countOf } from '../lib/plural';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 interface TopBarProps {
   people: PeopleById;
@@ -97,6 +98,7 @@ interface CompactMenuItem { label: string; icon: ReactNode; disabled?: boolean; 
 
 // On narrow screens the top bar has no room for undo/redo, refresh and the theme switch, so they move into this menu.
 function MoreMenu({ compactItems, onChangeMe, onClose }: { compactItems: CompactMenuItem[]; onChangeMe: () => void; onClose: () => void }) {
+  const install = useInstallPrompt();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -131,6 +133,12 @@ function MoreMenu({ compactItems, onChangeMe, onClose }: { compactItems: Compact
             <UserRound className="size-3.5" />
             Zmień, kim jestem…
           </button>
+          {install && (
+            <button type="button" role="menuitem" onClick={choose(() => void install())} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
+              <Download className="size-3.5" />
+              Zainstaluj aplikację
+            </button>
+          )}
           <div className="my-1 h-px bg-zinc-100 dark:bg-zinc-800" />
           <button type="button" role="menuitem" onClick={choose(onClose)} className={`${item} text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40`}>
             <LogOut className="size-3.5" />
