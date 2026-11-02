@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { DEGREE_RANGES, type DegreeRange, type FamilyDegrees } from '../lib/familyView';
 import { countOf, plural } from '../lib/plural';
@@ -7,7 +6,6 @@ interface ViewControlsProps {
   degrees?: FamilyDegrees;
   rootName?: string;
   isMine: boolean;
-  picker?: ReactNode;
   connection?: { fromName: string; fromIsMe: boolean; name: string; description: string };
   shownCount: number;
   totalCount: number;
@@ -57,7 +55,7 @@ function Stepper({ label, value, range, description, onChange }: { label: string
   );
 }
 
-export function ViewControls({ degrees, rootName, isMine, picker, connection, shownCount, totalCount, onDegreeChange }: ViewControlsProps) {
+export function ViewControls({ degrees, rootName, isMine, connection, shownCount, totalCount, onDegreeChange }: ViewControlsProps) {
   return (
     <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-2">
       {connection ? (
@@ -71,7 +69,6 @@ export function ViewControls({ degrees, rootName, isMine, picker, connection, sh
         </h2>
       )}
       <div className="flex flex-wrap items-center gap-2">
-      {picker}
       {!connection && degrees && <div className={`${panelClass} grid grid-cols-2 sm:flex sm:divide-x sm:divide-zinc-200 sm:dark:divide-zinc-800`}>
         {controls.map(({ kind, label, describe }) => (
           <Stepper key={kind} label={label} value={degrees[kind]} range={DEGREE_RANGES[kind]} description={describe(degrees[kind])} onChange={(d) => onDegreeChange(kind, d)} />

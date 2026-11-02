@@ -120,12 +120,11 @@ export function useViewPrefs() {
     return { ...p, tabs: [...p.tabs, tab], activeTabId: tab.id };
   }), []);
 
-  const updateConnection = useCallback((tabId: string, fromId: string | null, toId: string | null) => setPrefs((p) => ({ ...p, tabs: p.tabs.map((t) => (t.id === tabId && t.kind === 'connection' ? { ...t, fromId: fromId === p.meId ? null : fromId, toId } : t)) })), []);
 
   const changeDegree = useCallback((kind: keyof FamilyDegrees, delta: number) => setPrefs((p) => ({
     ...p,
     tabs: p.tabs.map((t) => (t.id === p.activeTabId && t.kind === 'family' ? { ...t, degrees: { ...t.degrees, [kind]: clamp(clamp(t.degrees[kind], DEGREE_RANGES[kind]) + delta, DEGREE_RANGES[kind]) } } : t)),
   })), []);
 
-  return { prefs, activeTab, setMe, activateTab, closeTab, closeTabs, openFamilyTab, navigateTo, openConnectionTab, updateConnection, changeDegree };
+  return { prefs, activeTab, setMe, activateTab, closeTab, closeTabs, openFamilyTab, navigateTo, openConnectionTab, changeDegree };
 }

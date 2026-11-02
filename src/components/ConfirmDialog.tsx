@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 interface ConfirmDialogProps {
   title: string;
@@ -10,6 +11,7 @@ interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
+// Rendered into <body>: opened from inside the details panel, whose slide-in transform would otherwise confine a fixed overlay to the panel.
 export function ConfirmDialog({ title, children, confirmLabel, danger = false, onConfirm, onCancel }: ConfirmDialogProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel(); };
@@ -17,7 +19,7 @@ export function ConfirmDialog({ title, children, confirmLabel, danger = false, o
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onCancel]);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex gap-3">
@@ -32,6 +34,7 @@ export function ConfirmDialog({ title, children, confirmLabel, danger = false, o
           <button type="button" onClick={onConfirm} className={`h-8 rounded-md px-3 text-xs font-medium text-white ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-zinc-900 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'}`}>{confirmLabel}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

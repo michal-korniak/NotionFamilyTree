@@ -73,6 +73,10 @@ export function useFamilyTree() {
     setState((s) => (s.tree ? { ...s, tree: { ...s.tree, notion } } : s));
   }, []);
 
+  const updateNotionLink = useCallback((update: (notion: NotionLink) => NotionLink) => {
+    setState((s) => (s.tree?.notion ? { ...s, tree: { ...s.tree, notion: update(s.tree.notion) } } : s));
+  }, []);
+
   // Union details are edited through a form with its own Anuluj, so they are saved directly rather than through the undo history.
   const updateUnion = useCallback((key: string, details: UnionDetails) => {
     setState((s) => (s.tree ? { ...s, tree: { ...s.tree, unions: { ...s.tree.unions, [key]: details } }, dirty: true } : s));
@@ -111,7 +115,7 @@ export function useFamilyTree() {
 
   const dismissWarnings = useCallback(() => setWarnings([]), []);
 
-  return { tree, warnings, dirty, canUndo: state.past.length > 0, canRedo: state.future.length > 0, loadImported, setNotionLink, updateUnion, startEmpty, reset, commit, undo, redo, dismissWarnings };
+  return { tree, warnings, dirty, canUndo: state.past.length > 0, canRedo: state.future.length > 0, loadImported, setNotionLink, updateNotionLink, updateUnion, startEmpty, reset, commit, undo, redo, dismissWarnings };
 }
 
 export type FamilyTreeController = ReturnType<typeof useFamilyTree>;

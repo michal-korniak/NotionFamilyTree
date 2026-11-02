@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Cake, Flower2, Hourglass, Link2, Pencil, Trash2, Users, X } from 'lucide-react';
+import { Cake, Flower2, Hourglass, Link2, Pencil, Trash2, Users, Waypoints, X } from 'lucide-react';
 import type { Gender, PeopleById, Person, UnionDetails } from '../types/person';
 import { siblingIds, type NewPersonNames, type PersonDetails, type RelativeKind } from '../lib/treeEdits';
 import { computeAge, formatDate, formatLifeYears, hasKnownDate, isDeceased } from '../lib/dates';
@@ -41,6 +41,8 @@ interface PersonDrawerProps {
   // undefined: the tree is not linked to Notion; null: this person has no Notion page yet.
   notionPageId?: string | null;
   onShowConnection?: (id: string) => void;
+  // Opens a picker for the other person and then a connection tab between the two.
+  onConnectWith?: (id: string) => void;
   onClose: () => void;
 }
 
@@ -135,7 +137,7 @@ function DeleteConfirmation({ person, onCancel, onConfirm }: { person: Person; o
   );
 }
 
-function DrawerBody({ person, people, editing, isNew, describeUnion, unions, relationToMe, notionPageId, onShowConnection, actions, onSelect, onShowFamily, onClose }: Omit<PersonDrawerProps, 'person' | 'open'> & { person: Person }) {
+function DrawerBody({ person, people, editing, isNew, describeUnion, unions, relationToMe, notionPageId, onShowConnection, onConnectWith, actions, onSelect, onShowFamily, onClose }: Omit<PersonDrawerProps, 'person' | 'open'> & { person: Person }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const siblings = useMemo(() => siblingIds(people, person.id), [people, person.id]);
   const exclude = useMemo(() => new Set([person.id, ...relativesOf(person), ...siblings]), [person, siblings]);
@@ -166,6 +168,12 @@ function DrawerBody({ person, people, editing, isNew, describeUnion, unions, rel
               <button type="button" onClick={() => onShowConnection(person.id)} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                 <Link2 className="size-3.5" />
                 Powiązanie ze mną
+              </button>
+            )}
+            {onConnectWith && (
+              <button type="button" onClick={() => onConnectWith(person.id)} className="col-span-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                <Waypoints className="size-3.5" />
+                Powiązanie z inną osobą
               </button>
             )}
           </div>

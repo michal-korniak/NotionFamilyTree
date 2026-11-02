@@ -2,6 +2,7 @@ import { unionKey, type NotionLink, type PeopleById, type Person, type UnionDeta
 import { NotionClient } from './notionClient';
 import { applyPhotoChanges, makeThumbnail, type PhotoAdd } from './notionPhotos';
 import type { PhotoOp } from '../photoQueue';
+import { addRelation, deletePerson, removeRelation } from '../treeEdits';
 import { DETAIL_FIELDS, detailProperties, externalIdProperty, parentProperties, unionDetailProperties, unionProperties, unionTitleProperty, type DetailField } from './notionMapping';
 
 export type ChangeKind = 'create' | 'restore' | 'update' | 'trash' | 'union-create' | 'union-rename' | 'union-update' | 'union-trash' | 'photos';
@@ -102,6 +103,62 @@ export function diffNotion(link: NotionLink, current: PeopleById, unions: Record
     ...p.unionsTrashed.map((pair) => ({ kind: 'union-trash' as const, key: unionKey(...pair), label: couple(pair) })),
     ...p.trashed.map((person) => ({ kind: 'trash' as const, key: person.id, label: person.name })),
   ];
+}
+
+// A renamed couple's title follows a person's name change and goes away when that change is undone, so it has no undo of its own.
+export function canRevert(change: NotionChange): boolean {
+  return change.kind !== 'union-rename';
+}
+
+// Puts one change back to what Notion has (link.baseline and link.unions), keeping both sides of every link in step. Photo changes live in
+// the photo queue and are undone there.
+export function revertChange(change: NotionChange, link: NotionLink, current: PeopleById, unions: Record<string, UnionDetails>): { people: PeopleById; unions: Record<string, UnionDetails> } {
+  const baseline = new Map(link.baseline.map((person) => [person.id, person]));
+  let people = current;
+  const nextUnions = { ...unions };
+  const notionDetails = (key: string): UnionDetails => { const { kind, date, place, notes } = link.unions[key] ?? {}; return { kind, date, place, notes }; };
+  const relink = (id: string, kind: 'parents' | 'children' | 'spouses', ids: string[]) => {
+    for (const otherId of people.get(id)?.[kind] ?? []) if (!ids.includes(otherId)) people = removeRelation(people, id, kind, otherId);
+    for (const otherId of ids) { const added = people.has(otherId) && !people.get(id)?.[kind].includes(otherId) ? addRelation(people, id, kind, otherId) : null; if (added?.ok) people = added.people; }
+  };
+
+  switch (change.kind) {
+    case 'create':
+    case 'restore':
+      people = deletePerson(people, change.key);
+      break;
+    case 'update': {
+      const base = baseline.get(change.key);
+      const person = people.get(change.key);
+      if (!base || !person) break;
+      people = new Map(people).set(person.id, { ...person, ...Object.fromEntries(DETAIL_FIELDS.map((field) => [field, base[field]])) });
+      relink(person.id, 'parents', base.parents);
+      break;
+    }
+    case 'trash': {
+      const base = baseline.get(change.key);
+      if (!base) break;
+      people = new Map(people).set(base.id, { ...base, parents: [], children: [], spouses: [] });
+      relink(base.id, 'parents', base.parents);
+      relink(base.id, 'children', base.children);
+      relink(base.id, 'spouses', base.spouses);
+      for (const spouseId of base.spouses) nextUnions[unionKey(base.id, spouseId)] = notionDetails(unionKey(base.id, spouseId));
+      break;
+    }
+    case 'union-create':
+    case 'union-trash': {
+      const [a, b] = change.key.split('|') as [string, string];
+      if (change.kind === 'union-create') people = removeRelation(people, a, 'spouses', b);
+      else { const added = addRelation(people, a, 'spouses', b); if (added.ok) people = added.people; nextUnions[change.key] = notionDetails(change.key); }
+      break;
+    }
+    case 'union-update': {
+      const key = change.key.replace(/:details$/, '');
+      nextUnions[key] = notionDetails(key);
+      break;
+    }
+  }
+  return { people, unions: nextUnions };
 }
 
 interface PhotoGroup {

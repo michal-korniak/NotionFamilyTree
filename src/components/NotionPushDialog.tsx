@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, RotateCcw, X } from 'lucide-react';
 import type { NotionLink, PeopleById, UnionDetails } from '../types/person';
-import { diffNotion, photoChanges, pushToNotion, type NotionChange } from '../lib/notion/notionPush';
+import { canRevert, diffNotion, photoChanges, pushToNotion, type NotionChange } from '../lib/notion/notionPush';
 import type { PhotoOp } from '../lib/photoQueue';
 import { notionSettings } from '../lib/notion/notionSettings';
 import { NotionIcon } from './NotionIcon';
@@ -13,6 +13,8 @@ interface NotionPushDialogProps {
   unions: Record<string, UnionDetails>;
   photoOps: PhotoOp[];
   onPhotosSaved: (opIds: string[]) => void;
+  // Puts one change back to what Notion has, so it is not saved.
+  onRevert: (change: NotionChange) => void;
   onPushed: (link: NotionLink) => void;
   onClose: () => void;
 }
@@ -31,7 +33,7 @@ const kindLabel: Record<NotionChange['kind'], { label: string; className: string
 
 type Phase = { kind: 'review' } | { kind: 'pushing'; done: number; total: number } | { kind: 'done'; saved: number } | { kind: 'failed'; error: string };
 
-export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved, onPushed, onClose }: NotionPushDialogProps) {
+export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved, onRevert, onPushed, onClose }: NotionPushDialogProps) {
   const changes = useMemo(() => [...diffNotion(link, people, unions), ...photoChanges(photoOps, people)], [link, people, unions, photoOps]);
   const [token, setToken] = useState(notionSettings.token);
   const [phase, setPhase] = useState<Phase>({ kind: 'review' });
@@ -60,7 +62,7 @@ export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved
           <NotionIcon className="size-5" />
           <div className="min-w-0 flex-1">
             <h2 id="notion-push-title" className="text-sm font-semibold">Zapisz zmiany w Notion</h2>
-            <p className="truncate text-xs text-zinc-500">{link.title} · ostatnia synchronizacja {new Date(link.syncedAt).toLocaleString('pl-PL')}</p>
+            <p className="truncate text-xs text-zinc-500">Ostatnia synchronizacja {new Date(link.syncedAt).toLocaleString('pl-PL')}</p>
           </div>
           <button type="button" onClick={onClose} disabled={busy} aria-label="Zamknij" className="grid size-7 place-items-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><X className="size-4" /></button>
         </div>
@@ -83,6 +85,7 @@ export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved
                     <span className={`shrink-0 rounded px-1.5 py-px text-[10px] font-medium ${kindLabel[change.kind].className}`}>{kindLabel[change.kind].label}</span>
                     <span className="min-w-0 flex-1 truncate">{change.label}</span>
                     {change.detail && <span className="max-w-[45%] shrink-0 truncate text-[11px] text-zinc-400" title={change.detail}>{change.detail}</span>}
+                    {canRevert(change) && <button type="button" onClick={() => onRevert(change)} disabled={busy} aria-label={`Cofnij zmianę: ${change.label}`} title="Cofnij tę zmianę" className="grid size-6 shrink-0 place-items-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><RotateCcw className="size-3.5" /></button>}
                   </li>
                 ))}
               </ul>

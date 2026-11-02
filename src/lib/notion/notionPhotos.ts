@@ -68,6 +68,25 @@ export async function cacheThumbnail(photo: StoredPhoto): Promise<boolean> {
   return true;
 }
 
+// Uploads thumbnails made on this device for photos that had none in Notion (added there directly), so other devices download only the
+// thumbnail. Only the thumbnail column is written, and it is read right before, so thumbnails another device added meanwhile are kept and
+// not uploaded twice. Returns the thumbnail key for each photo name that now has one.
+export async function backfillThumbnails(client: NotionClient, pageId: string, property: string, items: { name: string; thumb: Blob }[]): Promise<Record<string, string>> {
+  const thumbProperty = thumbnailColumn(property);
+  const existing = photosOf(await client.retrievePage(pageId, [thumbProperty]), thumbProperty);
+  const existingNames = new Set(existing.map((thumb) => thumb.name));
+  const missing = items.filter((item) => !existingNames.has(THUMB_PREFIX + item.name));
+  let thumbs = existing;
+  if (missing.length) {
+    const uploaded: Record<string, unknown>[] = [];
+    for (const { name, thumb } of missing) uploaded.push({ name: THUMB_PREFIX + name, type: 'file_upload', file_upload: { id: await client.uploadFile(thumb, THUMB_PREFIX + name) } });
+    thumbs = photosOf(await client.updatePage(pageId, { properties: { [thumbProperty]: { files: [...existing.map((thumb) => thumb.keep), ...uploaded] } } }), thumbProperty);
+  }
+  remember(thumbs);
+  const keyByName = new Map(thumbs.map((thumb) => [thumb.name, photoFileKey(thumb.url)]));
+  return Object.fromEntries(items.flatMap(({ name }) => { const key = keyByName.get(THUMB_PREFIX + name); return key ? [[name, key]] : []; }));
+}
+
 // The full photo is never kept locally; opening one asks Notion for a fresh link unless the last read is recent enough.
 export async function fullPhotoUrl(client: NotionClient, pageId: string, key: string, properties: readonly string[]): Promise<string> {
   const known = freshUrl(key);

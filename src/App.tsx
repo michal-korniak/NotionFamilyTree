@@ -6,7 +6,6 @@ import { computeStats } from './lib/stats';
 import { addRelative, createPerson, createRelative, deletePerson, removeRelative, updatePersonDetails, withSecondParent, type EditResult } from './lib/treeEdits';
 import { StartScreen } from './components/StartScreen';
 import { WhoAreYouDialog } from './components/WhoAreYouDialog';
-import { ConnectionPicker } from './components/ConnectionPicker';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { Home, Link2, Pencil, Trash2, UserPlus, Users, Waypoints, X } from 'lucide-react';
 import { describeRelationship, describeRelationshipToMe, relationship, type Relationship } from './lib/kinship';
@@ -25,7 +24,7 @@ import { defaultRoot, familyMembers, hiddenRelativeCounts, isPhoneLayout, restri
 import { generationDepth } from './lib/stats';
 import { NotionPushDialog } from './components/NotionPushDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
-import { diffNotion, photoChanges } from './lib/notion/notionPush';
+import { diffNotion, photoChanges, revertChange, type NotionChange } from './lib/notion/notionPush';
 import { PhotosContext, usePhotoQueue } from './hooks/usePhotoQueue';
 import { usePhotoCache } from './hooks/usePhotoCache';
 import { describeUnion, PHOTO_PROPERTIES, refreshNotionDatabase, type NotionImport } from './lib/notion/notionMapping';
@@ -63,7 +62,7 @@ function useUndoShortcuts(undo: () => void, redo: () => void) {
 function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const { tree, warnings, dirty, canUndo, canRedo, commit, undo, redo, reset, dismissWarnings, setNotionLink, updateUnion } = controller;
   const { people } = tree;
-  const { prefs: view, activeTab, setMe, activateTab, closeTab, closeTabs, openFamilyTab, navigateTo, openConnectionTab, updateConnection, changeDegree } = useViewPrefs();
+  const { prefs: view, activeTab, setMe, activateTab, closeTab, closeTabs, openFamilyTab, navigateTo, openConnectionTab, changeDegree } = useViewPrefs();
   const meId = view.meId && people.has(view.meId) ? view.meId : null;
   const [changingMe, setChangingMe] = useState(false);
   const familyTab = activeTab.kind === 'family' ? activeTab : null;
@@ -90,7 +89,8 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const describeSpouseUnion = useCallback((personId: string, spouseId: string) => describeUnion({ ...tree.unions[unionKey(personId, spouseId)], ending: notionLink?.unions[unionKey(personId, spouseId)]?.ending }), [tree.unions, notionLink]);
   const unionAccess = useMemo(() => ({ get: (a: string, b: string) => tree.unions[unionKey(a, b)], save: (a: string, b: string, details: UnionDetails) => updateUnion(unionKey(a, b), details) }), [tree.unions, updateUnion]);
   const photos = usePhotoQueue();
-  const photoCacheState = usePhotoCache(tree.notion);
+  const recordThumbnails = useCallback((personId: string, property: string, thumbKeyByName: Record<string, string>) => controller.updateNotionLink((link) => ({ ...link, photos: { ...link.photos, [personId]: { ...link.photos?.[personId], [property]: (link.photos?.[personId]?.[property] ?? []).map((photo) => (thumbKeyByName[photo.name] ? { ...photo, thumbKey: thumbKeyByName[photo.name] } : photo)) } } })), [controller]);
+  const photoCacheState = usePhotoCache(tree.notion, recordThumbnails);
   const openFullPhoto = useCallback(async (personId: string, key: string) => {
     const token = notionSettings.token();
     const pageId = tree.notion?.pageIds[personId];
@@ -189,12 +189,6 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     ];
   };
 
-  // The picker edits the open connection tab; used from a family tab it opens a connection tab, and its × (back to "Ja ↔ nobody") closes it.
-  const changeConnection = useCallback((from: string, to: string | null) => {
-    if (activeTab.kind !== 'connection') { openConnectionTab(from, to); return; }
-    if (to === null && from === meId) { closeTab(activeTab.id); return; }
-    updateConnection(activeTab.id, from, to);
-  }, [activeTab, meId, openConnectionTab, closeTab, updateConnection]);
 
   const nameOf = (id: string | null) => (id && people.has(id) ? displayName(people.get(id)!) : '…');
   const tabInfos: TabInfo[] = view.tabs.map((tab: ViewTab) => {
@@ -202,6 +196,18 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     if (tab.kind === 'family') return { id: tab.id, label: nameOf(tab.rootId), icon: 'family', closable: true };
     return { id: tab.id, label: `${tab.fromId ? nameOf(tab.fromId) : 'Ja'} ↔ ${nameOf(tab.toId)}`, icon: 'connection', closable: true };
   });
+
+  const revertNotionChange = useCallback((change: NotionChange) => {
+    if (!tree.notion) return;
+    if (change.kind === 'photos') {
+      const [personId, property] = [change.key.slice(0, change.key.indexOf(':')), change.key.slice(change.key.indexOf(':') + 1)];
+      void photos.drop(photos.ops.filter((op) => op.personId === personId && op.property === property).map((op) => op.id));
+      return;
+    }
+    const reverted = revertChange(change, tree.notion, people, tree.unions);
+    if (reverted.people !== people) commit(reverted.people);
+    for (const [key, details] of Object.entries(reverted.unions)) if (details !== tree.unions[key]) updateUnion(key, details);
+  }, [tree.notion, tree.unions, people, photos, commit, updateUnion]);
 
   const handleReset = useCallback(() => {
     if (notionPending !== undefined || dirty) setCloseDialogOpen(true); else reset();
@@ -228,15 +234,15 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => { if (!isPhoneLayout()) setTabMenu({ id, x, y }); }} />
       <main className="relative flex-1 overflow-hidden">
         <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} hiddenRelatives={connection ? undefined : hiddenRelatives} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { if (isPhoneLayout()) return; select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => { if (!isPhoneLayout()) setMenu({ x, y, personId: null }); }} />
-        {people.size > 0 && <ViewControls connection={connection && connectWithId && connectFromId ? { fromName: connectFromId === meId ? 'Ja' : displayName(people.get(connectFromId)!), fromIsMe: connectFromId === meId, name: displayName(people.get(connectWithId)!), description: describeRelationship(connection) } : undefined} picker={meId && connectFromId && activeTab.kind === 'connection' ? <ConnectionPicker people={people} meId={meId} fromId={connectFromId} toId={connectWithId} onChange={changeConnection} /> : undefined} degrees={degrees} isMine={activeTab.id === HOME_TAB_ID} rootName={rootId && people.has(rootId) ? displayName(people.get(rootId)!) : undefined} shownCount={visible.size} totalCount={people.size} onDegreeChange={changeDegree} />}
+        {people.size > 0 && <ViewControls connection={connection && connectWithId && connectFromId ? { fromName: connectFromId === meId ? 'Ja' : displayName(people.get(connectFromId)!), fromIsMe: connectFromId === meId, name: displayName(people.get(connectWithId)!), description: describeRelationship(connection) } : undefined} degrees={degrees} isMine={activeTab.id === HOME_TAB_ID} rootName={rootId && people.has(rootId) ? displayName(people.get(rootId)!) : undefined} shownCount={visible.size} totalCount={people.size} onDegreeChange={changeDegree} />}
         {people.size === 0 && <EmptyTree onAddPerson={addPerson} />}
         <WarningBanner warnings={warnings} onDismiss={dismissWarnings} />
-        <PersonDrawer isNew={drawerId !== null && drawerId === newPersonId} notionPageId={tree.notion ? (drawerId && tree.notion.pageIds[drawerId]) || null : undefined} relationToMe={drawerId && meId && drawerId !== meId ? describeToMeOrNull(relationship(people, meId, drawerId, unionKindOf)) : undefined} onShowConnection={meId ? (id) => { if (id === meId) return; openConnectionTab(null, id); if (isPhoneLayout()) close(); } : undefined} person={drawerPerson} open={activeSelectedId !== null} editing={editingId !== null && editingId === drawerId} people={people} describeUnion={describeSpouseUnion} unions={unionAccess} actions={actions} onSelect={selectAndFocus} onFocus={focus} onShowFamily={(id) => { openFamily(id); if (isPhoneLayout()) close(); }} onClose={close} />
+        <PersonDrawer isNew={drawerId !== null && drawerId === newPersonId} onConnectWith={setConnectionFromId} notionPageId={tree.notion ? (drawerId && tree.notion.pageIds[drawerId]) || null : undefined} relationToMe={drawerId && meId && drawerId !== meId ? describeToMeOrNull(relationship(people, meId, drawerId, unionKindOf)) : undefined} onShowConnection={meId ? (id) => { if (id === meId) return; openConnectionTab(null, id); if (isPhoneLayout()) close(); } : undefined} person={drawerPerson} open={activeSelectedId !== null} editing={editingId !== null && editingId === drawerId} people={people} describeUnion={describeSpouseUnion} unions={unionAccess} actions={actions} onSelect={selectAndFocus} onFocus={focus} onShowFamily={(id) => { openFamily(id); if (isPhoneLayout()) close(); }} onClose={close} />
       </main>
       {(meId === null || changingMe) && <WhoAreYouDialog people={people} currentMeId={meId} onChoose={chooseMe} onCreate={createMe} onCancel={meId !== null ? () => setChangingMe(false) : undefined} />}
       {tabMenu && tabMenuItems(tabMenu.id).length > 0 && <ContextMenu x={tabMenu.x} y={tabMenu.y} items={tabMenuItems(tabMenu.id)} onClose={() => setTabMenu(null)} />}
       {menu && <ContextMenu x={menu.x} y={menu.y} title={menu.personId && people.has(menu.personId) ? displayName(people.get(menu.personId)!) : undefined} items={menuItems(menu.personId)} onClose={closeMenu} />}
-      {connectionFromId && people.has(connectionFromId) && <PersonPickDialog title={`Powiązanie: ${displayName(people.get(connectionFromId)!)} ↔ …`} people={people} exclude={new Set([connectionFromId])} onPick={(toId) => { openConnectionTab(connectionFromId, toId); setConnectionFromId(null); }} onClose={() => setConnectionFromId(null)} />}
+      {connectionFromId && people.has(connectionFromId) && <PersonPickDialog title={`Powiązanie: ${displayName(people.get(connectionFromId)!)} ↔ …`} people={people} exclude={new Set([connectionFromId])} onPick={(toId) => { openConnectionTab(connectionFromId, toId); setConnectionFromId(null); if (isPhoneLayout()) close(); }} onClose={() => setConnectionFromId(null)} />}
       {deleteCandidate && people.has(deleteCandidate) && (
         <ConfirmDialog title={`Usunąć: ${displayName(people.get(deleteCandidate)!)}?`} confirmLabel="Usuń" danger onConfirm={() => { commit(deletePerson(people, deleteCandidate)); if (selectedId === deleteCandidate) close(); setDeleteCandidate(null); }} onCancel={() => setDeleteCandidate(null)}>
           <p>Osoba i jej powiązania zostaną usunięte. Możesz cofnąć przez Ctrl+Z.</p>
@@ -258,7 +264,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
           {tree.notion ? <p>Lokalna kopia „{tree.sourceName}” zostanie usunięta z tej przeglądarki. Dane w Notion pozostaną bez zmian i w każdej chwili możesz je zaimportować ponownie.</p> : <p>Drzewo zostanie usunięte z tej przeglądarki.</p>}
         </ConfirmDialog>
       )}
-      {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} photoOps={photos.ops} onPhotosSaved={(ids) => void photos.drop(ids)} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
+      {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} photoOps={photos.ops} onPhotosSaved={(ids) => void photos.drop(ids)} onRevert={revertNotionChange} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
     </div>
     </PhotosContext.Provider>
   );
