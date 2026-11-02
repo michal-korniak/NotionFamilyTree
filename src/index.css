@@ -30,6 +30,14 @@ html.dark {
   color-scheme: only dark;
 }
 
+/* Samsung Internet ignores color-scheme and darkens any page whose stylesheets have no prefers-color-scheme: dark rule, taking it as a site
+   without a dark theme. The app switches themes with a class instead, so this rule only marks it as having one; the colors stay as above. */
+@media (prefers-color-scheme: dark) {
+  html:not(.dark) {
+    color-scheme: only light;
+  }
+}
+
 /* Phones zoom and pan with fingers, so the view controls only take room there. */
 @media (max-width: 639px) {
   .react-flow__controls {
