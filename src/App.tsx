@@ -25,8 +25,10 @@ import { defaultRoot, familyMembers, hiddenRelativeCounts, isPhoneLayout, restri
 import { generationDepth } from './lib/stats';
 import { NotionPushDialog } from './components/NotionPushDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
-import { diffNotion } from './lib/notion/notionPush';
-import { describeUnion, importNotionDatabase, type NotionImport } from './lib/notion/notionMapping';
+import { diffNotion, photoChanges } from './lib/notion/notionPush';
+import { PhotosContext, usePhotoQueue } from './hooks/usePhotoQueue';
+import { usePhotoCache } from './hooks/usePhotoCache';
+import { describeUnion, refreshNotionDatabase, type NotionImport } from './lib/notion/notionMapping';
 import { unionKey, type Gender, type UnionDetails } from './types/person';
 
 interface ExplorerProps {
@@ -85,7 +87,10 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const describeSpouseUnion = useCallback((personId: string, spouseId: string) => describeUnion({ ...tree.unions[unionKey(personId, spouseId)], ending: notionLink?.unions[unionKey(personId, spouseId)]?.ending }), [tree.unions, notionLink]);
   const unionAccess = useMemo(() => ({ get: (a: string, b: string) => tree.unions[unionKey(a, b)], save: (a: string, b: string, details: UnionDetails) => updateUnion(unionKey(a, b), details) }), [tree.unions, updateUnion]);
-  const notionPending = useMemo(() => (tree.notion ? diffNotion(tree.notion, people, tree.unions).length : undefined), [tree.notion, people, tree.unions]);
+  const photos = usePhotoQueue();
+  const photoCacheState = usePhotoCache(tree.notion);
+  const photosContext = useMemo(() => ({ queue: photos, cache: photoCacheState, listing: tree.notion?.photos ?? {} }), [photos, photoCacheState, tree.notion?.photos]);
+  const notionPending = useMemo(() => (tree.notion ? diffNotion(tree.notion, people, tree.unions).length + photoChanges(photos.ops, people).length : undefined), [tree.notion, people, tree.unions, photos.ops]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -95,7 +100,9 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     if (!token) { setRefreshError('Brak zapisanego tokenu Notion. Podaj go w oknie „Zapisz zmiany”.'); return; }
     setRefreshing(true);
     try {
-      const result = await importNotionDatabase(token, tree.notion.databaseId);
+      const result = await refreshNotionDatabase(token, tree.notion);
+      // With nothing new in Notion only the sync time moves on, so local edits and the undo history survive the refresh.
+      if (!result.changedPeople && !result.changedUnions && !result.changedPhotos && !result.removedPeople && !result.removedUnions) { controller.setNotionLink({ ...tree.notion, syncedAt: result.link.syncedAt }); return; }
       const failure = controller.loadImported(result.records, result.link.title, result.warnings, result.link);
       if (failure) setRefreshError(failure);
     } catch (error) {
@@ -207,6 +214,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   }, [drawerId, people, commit, close, newPersonId]);
 
   return (
+    <PhotosContext.Provider value={photosContext}>
     <div className="flex h-full flex-col">
       <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} />
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => { if (!isPhoneLayout()) setTabMenu({ id, x, y }); }} />
@@ -215,7 +223,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
         {people.size > 0 && <ViewControls connection={connection && connectWithId && connectFromId ? { fromName: connectFromId === meId ? 'Ja' : displayName(people.get(connectFromId)!), fromIsMe: connectFromId === meId, name: displayName(people.get(connectWithId)!), description: describeRelationship(connection) } : undefined} picker={meId && connectFromId && activeTab.kind === 'connection' ? <ConnectionPicker people={people} meId={meId} fromId={connectFromId} toId={connectWithId} onChange={changeConnection} /> : undefined} degrees={degrees} isMine={activeTab.id === HOME_TAB_ID} rootName={rootId && people.has(rootId) ? displayName(people.get(rootId)!) : undefined} shownCount={visible.size} totalCount={people.size} onDegreeChange={changeDegree} />}
         {people.size === 0 && <EmptyTree onAddPerson={addPerson} />}
         <WarningBanner warnings={warnings} onDismiss={dismissWarnings} />
-        <PersonDrawer isNew={drawerId !== null && drawerId === newPersonId} relationToMe={drawerId && meId && drawerId !== meId ? describeToMeOrNull(relationship(people, meId, drawerId, unionKindOf)) : undefined} onShowConnection={meId ? (id) => { if (id === meId) return; openConnectionTab(null, id); if (isPhoneLayout()) close(); } : undefined} person={drawerPerson} open={activeSelectedId !== null} editing={editingId !== null && editingId === drawerId} people={people} describeUnion={describeSpouseUnion} unions={unionAccess} actions={actions} onSelect={selectAndFocus} onFocus={focus} onShowFamily={(id) => { openFamily(id); if (isPhoneLayout()) close(); }} onClose={close} />
+        <PersonDrawer isNew={drawerId !== null && drawerId === newPersonId} notionPageId={tree.notion ? (drawerId && tree.notion.pageIds[drawerId]) || null : undefined} relationToMe={drawerId && meId && drawerId !== meId ? describeToMeOrNull(relationship(people, meId, drawerId, unionKindOf)) : undefined} onShowConnection={meId ? (id) => { if (id === meId) return; openConnectionTab(null, id); if (isPhoneLayout()) close(); } : undefined} person={drawerPerson} open={activeSelectedId !== null} editing={editingId !== null && editingId === drawerId} people={people} describeUnion={describeSpouseUnion} unions={unionAccess} actions={actions} onSelect={selectAndFocus} onFocus={focus} onShowFamily={(id) => { openFamily(id); if (isPhoneLayout()) close(); }} onClose={close} />
       </main>
       {(meId === null || changingMe) && <WhoAreYouDialog people={people} currentMeId={meId} onChoose={chooseMe} onCreate={createMe} onCancel={meId !== null ? () => setChangingMe(false) : undefined} />}
       {tabMenu && tabMenuItems(tabMenu.id).length > 0 && <ContextMenu x={tabMenu.x} y={tabMenu.y} items={tabMenuItems(tabMenu.id)} onClose={() => setTabMenu(null)} />}
@@ -227,7 +235,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
         </ConfirmDialog>
       )}
       {refreshConfirmOpen && (
-        <ConfirmDialog title="Odświeżyć z Notion?" confirmLabel="Odrzuć zmiany i odśwież" danger onConfirm={() => { setRefreshConfirmOpen(false); void refreshFromNotion(); }} onCancel={() => setRefreshConfirmOpen(false)}>
+        <ConfirmDialog title="Odświeżyć z Notion?" confirmLabel="Odrzuć zmiany i odśwież" danger onConfirm={() => { setRefreshConfirmOpen(false); void photos.clear(); void refreshFromNotion(); }} onCancel={() => setRefreshConfirmOpen(false)}>
           <p>Masz niewysłane zmiany ({notionPending}). Odświeżenie wczyta dane z Notion od nowa i te zmiany zostaną utracone. Aby je zachować, najpierw użyj „Zapisz zmiany”.</p>
         </ConfirmDialog>
       )}
@@ -237,13 +245,14 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
         </ConfirmDialog>
       )}
       {closeDialogOpen && (
-        <ConfirmDialog title="Zamknąć to drzewo?" confirmLabel={notionPending || (notionPending === undefined && dirty) ? 'Odrzuć zmiany i zamknij' : 'Zamknij drzewo'} danger onConfirm={() => { setCloseDialogOpen(false); reset(); }} onCancel={() => setCloseDialogOpen(false)}>
+        <ConfirmDialog title="Zamknąć to drzewo?" confirmLabel={notionPending || (notionPending === undefined && dirty) ? 'Odrzuć zmiany i zamknij' : 'Zamknij drzewo'} danger onConfirm={() => { setCloseDialogOpen(false); void photos.clear(); reset(); }} onCancel={() => setCloseDialogOpen(false)}>
           {notionPending ? <p className="font-medium text-red-600 dark:text-red-400">Niewysłane do Notion zmiany ({notionPending}) zostaną utracone. Aby je zachować, najpierw użyj „Zapisz zmiany”.</p> : null}
           {tree.notion ? <p>Lokalna kopia „{tree.sourceName}” zostanie usunięta z tej przeglądarki. Dane w Notion pozostaną bez zmian i w każdej chwili możesz je zaimportować ponownie.</p> : <p>Drzewo zostanie usunięte z tej przeglądarki.</p>}
         </ConfirmDialog>
       )}
-      {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
+      {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} photoOps={photos.ops} onPhotosSaved={(ids) => void photos.drop(ids)} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
     </div>
+    </PhotosContext.Provider>
   );
 }
 

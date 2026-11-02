@@ -7,6 +7,8 @@ export interface Person {
   deathDate?: string;
   birthPlace?: string;
   deathPlace?: string;
+  cemetery?: string;
+  burialInfo?: string;
   gender: Gender;
   parents: string[];
   children: string[];
@@ -44,6 +46,16 @@ export interface NotionLink {
   unions: Record<string, UnionRecord>;
   baseline: Person[];
   syncedAt: string;
+  // Which Notion columns the baseline was read with; a refresh reads everything again when it is older than NOTION_FIELDS_VERSION.
+  fieldsVersion?: number;
+  // What Notion has in each person's photo columns, keyed by person id and then column name; the images themselves are cached in IndexedDB.
+  photos?: Record<string, Record<string, StoredPhoto[]>>;
+}
+
+export interface StoredPhoto {
+  // The file's URL without its expiring signature; stable for as long as the file stays in Notion.
+  key: string;
+  name: string;
 }
 
 export function unionKey(a: string, b: string): string {

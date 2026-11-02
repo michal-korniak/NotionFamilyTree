@@ -3,6 +3,8 @@ import type { Gender, Person } from '../types/person';
 import type { PersonDetails } from '../lib/treeEdits';
 import { isValidDateText, parseYear } from '../lib/dates';
 import { composeName, nameParts } from '../lib/names';
+import { PEOPLE } from '../lib/notion/notionMapping';
+import { PhotoGallery } from './PhotoGallery';
 
 interface PersonFormProps {
   person: Person;
@@ -10,16 +12,18 @@ interface PersonFormProps {
   isNew?: boolean;
   onSave: (details: PersonDetails) => void;
   onCancel: () => void;
+  // undefined: the tree is not linked to Notion, so there is nowhere to keep photos.
+  notionPageId?: string | null;
 }
 
-type FormValues = Record<'givenNames' | 'birthSurname' | 'marriedSurname' | 'birthDate' | 'deathDate' | 'birthPlace' | 'deathPlace' | 'biography', string> & { gender: Gender | null };
+type FormValues = Record<'givenNames' | 'birthSurname' | 'marriedSurname' | 'birthDate' | 'deathDate' | 'birthPlace' | 'deathPlace' | 'cemetery' | 'burialInfo' | 'biography', string> & { gender: Gender | null };
 
 type FormErrors = Partial<Record<keyof FormValues, string>>;
 
 const inputClass = 'w-full rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 aria-invalid:border-red-400 dark:border-zinc-800 dark:bg-zinc-900 dark:focus:border-zinc-600 dark:focus:ring-zinc-800';
 
 function toValues(person: Person, isNew: boolean): FormValues {
-  return { ...nameParts(person), gender: isNew && person.gender === 'U' ? null : person.gender, birthDate: person.birthDate ?? '', deathDate: person.deathDate ?? '', birthPlace: person.birthPlace ?? '', deathPlace: person.deathPlace ?? '', biography: person.biography ?? '' };
+  return { ...nameParts(person), gender: isNew && person.gender === 'U' ? null : person.gender, birthDate: person.birthDate ?? '', deathDate: person.deathDate ?? '', birthPlace: person.birthPlace ?? '', deathPlace: person.deathPlace ?? '', cemetery: person.cemetery ?? '', burialInfo: person.burialInfo ?? '', biography: person.biography ?? '' };
 }
 
 function validate(values: FormValues): FormErrors {
@@ -49,7 +53,17 @@ function Field({ label, hint, error, children, className = '' }: { label: string
   );
 }
 
-export function PersonForm({ person, isNew = false, onSave, onCancel }: PersonFormProps) {
+// Not a <label> like Field: a label would forward every click inside it to the gallery's hidden file input.
+function PhotoField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <span className="mb-1 block text-[11px] font-medium tracking-wider text-zinc-500 uppercase">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+export function PersonForm({ person, isNew = false, onSave, onCancel, notionPageId }: PersonFormProps) {
   const [values, setValues] = useState(() => toValues(person, isNew));
   const [errors, setErrors] = useState<FormErrors>({});
   const fullName = composeName(values);
@@ -61,7 +75,7 @@ export function PersonForm({ person, isNew = false, onSave, onCancel }: PersonFo
     const found = validate(values);
     setErrors(found);
     if (Object.keys(found).length) return;
-    onSave({ name: fullName, givenNames: values.givenNames.trim(), birthSurname: values.birthSurname.trim(), marriedSurname: values.marriedSurname.trim(), gender: values.gender ?? 'U', birthDate: optional(values.birthDate), deathDate: optional(values.deathDate), birthPlace: optional(values.birthPlace), deathPlace: optional(values.deathPlace), biography: optional(values.biography) });
+    onSave({ name: fullName, givenNames: values.givenNames.trim(), birthSurname: values.birthSurname.trim(), marriedSurname: values.marriedSurname.trim(), gender: values.gender ?? 'U', birthDate: optional(values.birthDate), deathDate: optional(values.deathDate), birthPlace: optional(values.birthPlace), deathPlace: optional(values.deathPlace), cemetery: optional(values.cemetery), burialInfo: optional(values.burialInfo), biography: optional(values.biography) });
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -90,6 +104,7 @@ export function PersonForm({ person, isNew = false, onSave, onCancel }: PersonFo
           ))}
         </div>
       </Field>
+      {notionPageId !== undefined && <PhotoField label="Zdjęcia"><PhotoGallery personId={person.id} property={PEOPLE.photos} addLabel="Dodaj zdjęcie" /></PhotoField>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Data urodzenia" error={errors.birthDate}>
           <input value={values.birthDate} onChange={(e) => set('birthDate', e.target.value)} placeholder="1905-04-12" aria-invalid={Boolean(errors.birthDate)} className={`${inputClass} font-mono`} />
@@ -98,17 +113,23 @@ export function PersonForm({ person, isNew = false, onSave, onCancel }: PersonFo
           <input value={values.birthPlace} onChange={(e) => set('birthPlace', e.target.value)} className={inputClass} />
         </Field>
         <Field label="Data śmierci" error={errors.deathDate}>
-          <input value={values.deathDate} onChange={(e) => set('deathDate', e.target.value)} placeholder="puste, jeśli żyje" aria-invalid={Boolean(errors.deathDate)} className={`${inputClass} font-mono`} />
+          <input value={values.deathDate} onChange={(e) => set('deathDate', e.target.value)} aria-invalid={Boolean(errors.deathDate)} className={`${inputClass} font-mono`} />
         </Field>
         <Field label="Miejsce śmierci">
           <input value={values.deathPlace} onChange={(e) => set('deathPlace', e.target.value)} className={inputClass} />
         </Field>
       </div>
+      <Field label="Cmentarz">
+        <input value={values.cemetery} onChange={(e) => set('cemetery', e.target.value)} className={inputClass} />
+      </Field>
+      <Field label="Informacje o pochówku">
+        <textarea value={values.burialInfo} onChange={(e) => set('burialInfo', e.target.value)} rows={3} className={`${inputClass} resize-y leading-relaxed`} />
+      </Field>
+      {notionPageId !== undefined && <PhotoField label="Zdjęcie nagrobka"><PhotoGallery personId={person.id} property={PEOPLE.gravePhotos} addLabel="Dodaj zdjęcie nagrobka" /></PhotoField>}
       <Field label="Biografia">
         <textarea value={values.biography} onChange={(e) => set('biography', e.target.value)} rows={6} className={`${inputClass} resize-y leading-relaxed`} />
       </Field>
       <div className="flex items-center justify-end gap-2 pt-1">
-        <span className="mr-auto hidden font-mono text-[10px] text-zinc-400 sm:block">Ctrl+Enter, aby zapisać</span>
         <button type="button" onClick={onCancel} className="h-8 rounded-md px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900">Anuluj</button>
         <button type="submit" className="h-8 rounded-md bg-zinc-900 px-3 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300">Zapisz</button>
       </div>

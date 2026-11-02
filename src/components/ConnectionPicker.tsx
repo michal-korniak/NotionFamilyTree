@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Search, UserRound, X } from 'lucide-react';
 import type { PeopleById } from '../types/person';
 import { formatLifeYears, isDeceased } from '../lib/dates';
@@ -15,13 +15,25 @@ interface ConnectionPickerProps {
 }
 
 const MAX_RESULTS = 30;
+const DROPDOWN_WIDTH = 320;
+const VIEWPORT_MARGIN = 12;
 
 function PersonDropdown({ people, meId, value, placeholder, onSelect }: { people: PeopleById; meId: string; value: string | null; placeholder: string; onSelect: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [shiftLeft, setShiftLeft] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const results = useMemo(() => (query.trim() ? searchPeople(people, query, MAX_RESULTS) : []), [people, query]);
   const selected = value ? people.get(value) : undefined;
+
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) return;
+    const left = rootRef.current.getBoundingClientRect().left;
+    setShiftLeft(Math.max(0, left + Math.min(DROPDOWN_WIDTH, window.innerWidth - 2 * VIEWPORT_MARGIN) - (window.innerWidth - VIEWPORT_MARGIN)));
+    // A plain autoFocus scrolls the overflow-hidden <main> sideways on phones to reveal the input, shifting the whole view off screen.
+    inputRef.current?.focus({ preventScroll: true });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -40,14 +52,14 @@ function PersonDropdown({ people, meId, value, placeholder, onSelect }: { people
         <ChevronDown className="size-3 shrink-0 text-zinc-400" />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-50 mt-1.5 w-80 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+        <div style={{ left: -shiftLeft, width: `min(${DROPDOWN_WIDTH}px, calc(100vw - ${2 * VIEWPORT_MARGIN}px))` }} className="absolute top-full z-50 mt-1.5 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
           <button type="button" onClick={() => choose(meId)} className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${value === meId ? 'bg-zinc-100 dark:bg-zinc-800' : ''}`}>
             <span className="grid size-7 place-items-center rounded-full bg-zinc-100 text-zinc-500 dark:bg-zinc-800"><UserRound className="size-3.5" /></span>
             <span className="flex-1">Ja</span>
           </button>
           <div className="relative mt-1 border-t border-zinc-100 pt-1 dark:border-zinc-800">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 mt-0.5 size-3.5 -translate-y-1/2 text-zinc-400" />
-            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); if (e.key === 'Enter' && results[0]) choose(results[0].id); }} placeholder="Szukaj osoby…" className="h-8 w-full bg-transparent pr-2 pl-8 text-sm outline-none placeholder:text-zinc-400" />
+            <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); if (e.key === 'Enter' && results[0]) choose(results[0].id); }} placeholder="Szukaj osoby…" className="h-8 w-full bg-transparent pr-2 pl-8 text-sm outline-none placeholder:text-zinc-400" />
           </div>
           {results.length > 0 && (
             <ul className="max-h-72 overflow-y-auto">

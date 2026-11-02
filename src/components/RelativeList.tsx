@@ -69,12 +69,12 @@ export function RelativeList({ title, relation, ids, people, onSelect, editing, 
                   {!editing && !unionEditor && <ChevronRight className="size-4 text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-500 dark:text-zinc-700" />}
                 </button>
                 {unionEditor && editingUnionOf !== person.id && (
-                  <button type="button" onClick={() => setEditingUnionOf(person.id)} aria-label={`Edytuj związek z: ${displayName(person)}`} title="Edytuj związek" className={`absolute top-1/2 ${editing ? 'right-9' : 'right-2'} grid size-6 -translate-y-1/2 place-items-center rounded text-zinc-400 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-100`}>
+                  <button type="button" onClick={() => setEditingUnionOf(person.id)} aria-label={`Edytuj związek z: ${displayName(person)}`} title="Edytuj związek" className={`absolute top-1/2 ${editing ? 'right-9' : 'right-2'} grid size-6 -translate-y-1/2 place-items-center rounded text-zinc-400 transition-opacity mouse:opacity-0 mouse:group-hover/row:opacity-100 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-100`}>
                     <Pencil className="size-3.5" />
                   </button>
                 )}
                 {editing && (
-                  <button type="button" onClick={() => editing.onRemove(person.id)} aria-label={`Usuń powiązanie: ${person.name}`} title="Usuń powiązanie" className="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded text-zinc-400 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100 hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 dark:hover:bg-red-950/50 dark:hover:text-red-400">
+                  <button type="button" onClick={() => editing.onRemove(person.id)} aria-label={`Usuń powiązanie: ${person.name}`} title="Usuń powiązanie" className="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded text-zinc-400 transition-opacity mouse:opacity-0 mouse:group-hover/row:opacity-100 hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 dark:hover:bg-red-950/50 dark:hover:text-red-400">
                     <X className="size-3.5" />
                   </button>
                 )}

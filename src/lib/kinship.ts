@@ -10,6 +10,9 @@ export interface Relationship {
   label: string;
   // Degree as Polish civil law counts it; for affinity, the degree of kinship to the spouse.
   degree?: number;
+  // For a label naming the target through another relative ("Mąż ciotki", "Partnerka syna brata ciotecznego"): the index of the word
+  // naming the relative closest to the reference person, where "twojego"/"twojej" goes ("Mąż twojej ciotki").
+  ownerWord?: number;
   // Everyone on the connecting chains from the reference person to the target, both included: with several equally close common
   // ancestors (both parents of full siblings, both grandparents of cousins) every one of them and their chains are listed.
   path: string[];
@@ -79,6 +82,48 @@ function greatPrefix(levels: number): string {
   return 'pra'.repeat(Math.max(0, levels));
 }
 
+// Labels mark with "~" the word naming the relative closest to the reference person ("Mąż ~ciotki"); relationship() turns the mark into ownerWord.
+const OWNER = '~';
+
+// A cousin's family branch is named after the uncle or aunt in between: cioteczny through an aunt, stryjeczny through the father's brother, wujeczny through the mother's brother.
+function cousinSide(parentSide: Gender, auntOrUncle: Gender): string | null {
+  return auntOrUncle === 'F' ? 'cioteczn' : auntOrUncle === 'M' && parentSide === 'M' ? 'stryjeczn' : auntOrUncle === 'M' && parentSide === 'F' ? 'wujeczn' : null;
+}
+
+function cousinLabel(parentSide: Gender, auntOrUncle: Gender, target: Gender): string {
+  const side = cousinSide(parentSide, auntOrUncle);
+  return side ? byGender(target, `Brat ${side}y`, `Siostra ${side}a`, `Rodzeństwo ${side}e`) : byGender(target, 'Kuzyn', 'Kuzynka', 'Kuzynostwo');
+}
+
+// A cousin's child is a nephew or niece of that branch, named after the cousin like a sibling's child: bratanek through a male cousin, siostrzeniec through a female one.
+function cousinsChildLabel(parentSide: Gender, auntOrUncle: Gender, cousin: Gender, target: Gender): string {
+  const side = cousinSide(parentSide, auntOrUncle);
+  if (side && cousin === 'M') return byGender(target, `Bratanek ${side}y`, `Bratanica ${side}a`, `Dziecko ${OWNER}brata ${side}ego`);
+  if (side && cousin === 'F') return byGender(target, `Siostrzeniec ${side}y`, `Siostrzenica ${side}a`, `Dziecko ${OWNER}siostry ${side}ej`);
+  return `${byGender(target, 'Syn', 'Córka', 'Dziecko')} ${cousin === 'F' ? `${OWNER}kuzynki` : `${OWNER}kuzyna`}`;
+}
+
+const GENITIVE_NOUNS: Record<string, string> = {
+  ojciec: 'ojca', matka: 'matki', rodzic: 'rodzica', dziadek: 'dziadka', babcia: 'babci', syn: 'syna', 'córka': 'córki', dziecko: 'dziecka', wnuk: 'wnuka', wnuczka: 'wnuczki',
+  brat: 'brata', siostra: 'siostry', 'rodzeństwo': 'rodzeństwa', siostrzeniec: 'siostrzeńca', siostrzenica: 'siostrzenicy', bratanek: 'bratanka', bratanica: 'bratanicy',
+  wuj: 'wuja', stryj: 'stryja', ciotka: 'ciotki', kuzyn: 'kuzyna', kuzynka: 'kuzynki', kuzynostwo: 'kuzynostwa', krewny: 'krewnego', krewna: 'krewnej',
+};
+const GENITIVE_ADJECTIVES: Record<string, string> = { y: 'ego', a: 'ej', e: 'ego' };
+
+// "Syn ~brata ciotecznego" → "syna ~brata ciotecznego": the head noun and the adjective right after it change; the rest of a label is
+// already in the genitive. Null for a label this cannot inflect (e.g. "dziadek lub babcia"), so the caller falls back to a plain term.
+function genitive(label: string): string | null {
+  const words = label.split(' ');
+  if (words.includes('lub')) return null;
+  const [head, ...rest] = words as [string, ...string[]];
+  const owner = head.startsWith(OWNER) ? OWNER : '';
+  const [, prefix = '', noun = ''] = /^((?:pra)*)(.+)$/i.exec(head.replace(OWNER, '').toLowerCase()) ?? [];
+  const inflected = GENITIVE_NOUNS[noun];
+  if (!inflected) return null;
+  const adjective = rest[0] && /^(cioteczn|stryjeczn|wujeczn)[yae]$/.test(rest[0]) ? rest[0].slice(0, -1) + GENITIVE_ADJECTIVES[rest[0].slice(-1)]! : undefined;
+  return [`${owner}${prefix}${inflected}`, ...(adjective ? [adjective, ...rest.slice(1)] : rest)].join(' ');
+}
+
 function bloodLabel(people: PeopleById, link: BloodLink, target: Gender): string {
   const { up, down, path } = link;
   const via = (index: number) => people.get(path[index]!)?.gender ?? 'U';
@@ -92,17 +137,14 @@ function bloodLabel(people: PeopleById, link: BloodLink, target: Gender): string
   }
   if (up === 1 && down === 1) return byGender(target, 'Brat', 'Siostra', 'Rodzeństwo');
   // path[up] is the common ancestor; path[up + 1] is the sibling through whom a niece or nephew descends.
-  if (up === 1 && down === 2) return via(up + 1) === 'F' ? byGender(target, 'Siostrzeniec', 'Siostrzenica', 'Dziecko siostry') : byGender(target, 'Bratanek', 'Bratanica', 'Dziecko brata');
+  if (up === 1 && down === 2) return via(up + 1) === 'F' ? byGender(target, 'Siostrzeniec', 'Siostrzenica', `Dziecko ${OWNER}siostry`) : byGender(target, 'Bratanek', 'Bratanica', `Dziecko ${OWNER}brata`);
   // path[1] is the parent through whom an uncle or aunt is related: stryj on the father's side, wuj on the mother's.
   if (up === 2 && down === 1) return target === 'F' ? 'Ciotka' : via(1) === 'F' ? byGender(target, 'Wuj', 'Ciotka', 'Wujostwo') : byGender(target, 'Stryj', 'Ciotka', 'Stryjostwo');
-  // A first cousin is named after the uncle or aunt in between (path[3]): cioteczny through an aunt, stryjeczny through the father's brother, wujeczny through the mother's brother.
-  if (up === 2 && down === 2) {
-    const side = via(3) === 'F' ? 'cioteczn' : via(3) === 'M' && via(1) === 'M' ? 'stryjeczn' : via(3) === 'M' && via(1) === 'F' ? 'wujeczn' : null;
-    return side ? byGender(target, `Brat ${side}y`, `Siostra ${side}a`, `Rodzeństwo ${side}e`) : byGender(target, 'Kuzyn', 'Kuzynka', 'Kuzynostwo');
-  }
-  if (up === 3 && down === 1) return `${byGender(target, 'Brat', 'Siostra', 'Rodzeństwo')} ${via(2) === 'F' ? 'babci' : 'dziadka'}`;
-  if (up === 2 && down === 3) return `${byGender(target, 'Syn', 'Córka', 'Dziecko')} ${via(up + 2) === 'F' ? 'kuzynki' : 'kuzyna'}`;
-  if (up === 3 && down === 2) return `${byGender(target, 'Kuzyn', 'Kuzynka', 'Kuzynostwo')} ${via(1) === 'F' ? 'matki' : 'ojca'}`;
+  // path[1] is the parent and path[3] the uncle or aunt a first cousin descends through.
+  if (up === 2 && down === 2) return cousinLabel(via(1), via(3), target);
+  if (up === 3 && down === 1) return `${byGender(target, 'Brat', 'Siostra', 'Rodzeństwo')} ${OWNER}${via(2) === 'F' ? 'babci' : 'dziadka'}`;
+  if (up === 2 && down === 3) return cousinsChildLabel(via(1), via(3), via(4), target);
+  if (up === 3 && down === 2) return `${byGender(target, 'Kuzyn', 'Kuzynka', 'Kuzynostwo')} ${OWNER}${via(1) === 'F' ? 'matki' : 'ojca'}`;
   if (up === 3 && down === 3) return byGender(target, 'Kuzyn drugiego stopnia', 'Kuzynka drugiego stopnia', 'Kuzynostwo drugiego stopnia');
   return byGender(target, 'Krewny', 'Krewna', 'Krewny');
 }
@@ -113,19 +155,25 @@ function spousesRelativeLabel(link: BloodLink, target: Gender): string {
   if (up === 1 && down === 0) return byGender(target, 'Teść', 'Teściowa', 'Teść lub teściowa');
   if (up === 0 && down === 1) return byGender(target, 'Pasierb', 'Pasierbica', 'Pasierb lub pasierbica');
   if (up === 1 && down === 1) return byGender(target, 'Szwagier', 'Szwagierka', 'Szwagier lub szwagierka');
-  if (up === 2 && down === 0) return `${byGender(target, 'Dziadek', 'Babcia', 'Dziadek lub babcia')} małżonka`;
+  if (up === 2 && down === 0) return `${byGender(target, 'Dziadek', 'Babcia', 'Dziadek lub babcia')} ${OWNER}małżonka`;
   return byGender(target, 'Powinowaty', 'Powinowata', 'Powinowaty');
 }
 
-// Spouses of the reference's blood relatives (link runs reference → the relative the target is married to).
-function relativesSpouseLabel(link: BloodLink, target: Gender): string {
+// Partners of the reference's blood relatives (link runs reference → the relative). Married in-laws keep their own names (Synowa,
+// Szwagier, Mąż ciotki); anyone else is named through the relative and the kind of union: "Partnerka syna twojego brata ciotecznego".
+function relativesPartnerLabel(people: PeopleById, link: BloodLink, target: Gender, unionKind: string | undefined): string {
   const { up, down } = link;
-  if (up === 0 && down === 1) return byGender(target, 'Zięć', 'Synowa', 'Zięć lub synowa');
-  if (up === 1 && down === 0) return byGender(target, 'Ojczym', 'Macocha', 'Ojczym lub macocha');
-  if (up === 1 && down === 1) return byGender(target, 'Szwagier', 'Szwagierka', 'Szwagier lub szwagierka');
-  if (up === 2 && down === 1) return byGender(target, 'Mąż ciotki', 'Żona wuja', 'Powinowaty');
-  if (up === 0 && down === 2) return byGender(target, 'Mąż wnuczki', 'Żona wnuka', 'Powinowaty');
-  return byGender(target, 'Powinowaty', 'Powinowata', 'Powinowaty');
+  const married = !unionKind || unionKind === 'Małżeństwo' || unionKind === 'Nieznany';
+  if (married) {
+    if (up === 0 && down === 1) return byGender(target, 'Zięć', 'Synowa', 'Zięć lub synowa');
+    if (up === 1 && down === 0) return byGender(target, 'Ojczym', 'Macocha', 'Ojczym lub macocha');
+    if (up === 1 && down === 1) return byGender(target, 'Szwagier', 'Szwagierka', 'Szwagier lub szwagierka');
+  }
+  const relative = people.get(link.path[link.path.length - 1]!)?.gender ?? 'U';
+  const relativeLabel = bloodLabel(people, link, relative);
+  const relativeGenitive = genitive(relativeLabel.includes(OWNER) ? relativeLabel : OWNER + relativeLabel);
+  if (!relativeGenitive) return byGender(target, 'Powinowaty', 'Powinowata', 'Powinowaty');
+  return `${relationLabel('spouse', target, unionKind)} ${relativeGenitive}`;
 }
 
 // Any chain of family links (parents, children, spouses), for people connected only through several marriages.
@@ -151,7 +199,10 @@ function anyPath(people: PeopleById, from: string, to: string): string[] | null 
 // unionKind is the Notion union type of the pair, so an engaged couple reads "Narzeczona" rather than "Żona".
 export function relationship(people: PeopleById, referenceId: string, targetId: string, unionKind?: (a: string, b: string) => string | undefined): Relationship | null {
   const result = findRelationship(people, referenceId, targetId, unionKind);
-  return result && { ...result, label: result.label.charAt(0).toUpperCase() + result.label.slice(1) };
+  if (!result) return null;
+  const ownerWord = result.label.split(' ').findIndex((word) => word.startsWith(OWNER));
+  const label = result.label.replace(OWNER, '');
+  return { ...result, label: label.charAt(0).toUpperCase() + label.slice(1), ...(ownerWord > 0 ? { ownerWord } : {}) };
 }
 
 function findRelationship(people: PeopleById, referenceId: string, targetId: string, unionKind?: (a: string, b: string) => string | undefined): Relationship | null {
@@ -174,7 +225,7 @@ function findRelationship(people: PeopleById, referenceId: string, targetId: str
   }
   for (const spouse of target.spouses) {
     const link = people.has(spouse) ? bloodLink(people, referenceId, spouse) : null;
-    if (link) consider({ kind: 'affinity', label: relativesSpouseLabel(link, target.gender), degree: link.up + link.down, path: [...link.members, targetId] });
+    if (link) consider({ kind: 'affinity', label: relativesPartnerLabel(people, link, target.gender, unionKind?.(spouse, targetId)), degree: link.up + link.down, path: [...link.members, targetId] });
   }
   if (best) return best;
 
@@ -191,13 +242,14 @@ export function describeRelationship(rel: Relationship): string {
 
 // "Twoja babcia", "Twój kuzyn", "Twoje rodzeństwo": the pronoun agrees with the label's first word, whose ending gives its grammatical gender
 // for every label this module produces (-a feminine, -o/-e neuter, otherwise masculine). A label naming someone through another relative
-// ("Mąż ciotki") takes the pronoun on that relative instead: "Mąż twojej ciotki".
-const GENITIVE_PRONOUNS: Record<string, string> = { ciotki: 'twojej', siostry: 'twojej', babci: 'twojej', kuzynki: 'twojej', matki: 'twojej', wnuczki: 'twojej', wuja: 'twojego', brata: 'twojego', dziadka: 'twojego', kuzyna: 'twojego', ojca: 'twojego', wnuka: 'twojego' };
-
+// takes the pronoun on that relative, in the genitive: feminine nouns end in -i/-y/-j there ("Mąż twojej ciotki"), the rest take "twojego".
 export function describeRelationshipToMe(rel: Relationship): string {
   const words = rel.label.split(' ');
-  const genitivePronoun = words.length === 2 ? GENITIVE_PRONOUNS[words[1]!] : undefined;
-  if (genitivePronoun) return describeRelationship({ ...rel, label: `${words[0]} ${genitivePronoun} ${words[1]}` });
+  if (rel.ownerWord !== undefined) {
+    const owner = words[rel.ownerWord]!;
+    words.splice(rel.ownerWord, 0, /[iyj]$/.test(owner) ? 'twojej' : 'twojego');
+    return describeRelationship({ ...rel, label: words.join(' ') });
+  }
   const firstWord = words[0]!.toLowerCase();
   const pronoun = firstWord.endsWith('a') ? 'Twoja' : firstWord.endsWith('o') || firstWord.endsWith('e') ? 'Twoje' : 'Twój';
   return describeRelationship({ ...rel, label: `${pronoun} ${rel.label.charAt(0).toLowerCase()}${rel.label.slice(1)}` });

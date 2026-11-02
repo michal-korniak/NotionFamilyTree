@@ -3,7 +3,7 @@ import { composeName } from './names';
 
 export type RelationKind = 'parents' | 'children' | 'spouses';
 
-export type PersonDetails = Pick<Person, 'name' | 'gender' | 'birthDate' | 'deathDate' | 'birthPlace' | 'deathPlace' | 'biography' | 'givenNames' | 'birthSurname' | 'marriedSurname'>;
+export type PersonDetails = Pick<Person, 'name' | 'gender' | 'birthDate' | 'deathDate' | 'birthPlace' | 'deathPlace' | 'cemetery' | 'burialInfo' | 'biography' | 'givenNames' | 'birthSurname' | 'marriedSurname'>;
 
 export type EditResult = { ok: true; people: PeopleById } | { ok: false; error: string };
 

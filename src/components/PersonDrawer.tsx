@@ -11,6 +11,9 @@ import { IconButton } from './IconButton';
 import { PersonForm } from './PersonForm';
 import { RelativeList, type RelativeEditing } from './RelativeList';
 import { countOf } from '../lib/plural';
+import { PEOPLE } from '../lib/notion/notionMapping';
+import { PhotoGallery } from './PhotoGallery';
+import { usePhotosContext } from '../hooks/usePhotoQueue';
 
 export interface PersonEditActions {
   onStartEdit: () => void;
@@ -35,6 +38,8 @@ interface PersonDrawerProps {
   onShowFamily: (id: string) => void;
   isNew?: boolean;
   relationToMe?: string;
+  // undefined: the tree is not linked to Notion; null: this person has no Notion page yet.
+  notionPageId?: string | null;
   onShowConnection?: (id: string) => void;
   onClose: () => void;
 }
@@ -61,7 +66,18 @@ function withPlace(date: string | undefined, place: string | undefined) {
   );
 }
 
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h3 className="mb-1.5 text-[11px] font-medium tracking-wider text-zinc-500 uppercase">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
 function PersonDetailsView({ person, relationToMe, actions }: { person: Person; relationToMe?: string; actions?: ReactNode }) {
+  const { listing, queue } = usePhotosContext();
+  const hasPhotos = (property: string) => Boolean(listing[person.id]?.[property]?.length) || queue.ops.some((op) => op.kind === 'add' && op.personId === person.id && op.property === property);
   const age = computeAge(person);
   const showBorn = hasKnownDate(person.birthDate) || Boolean(person.birthPlace);
   const showDied = hasKnownDate(person.deathDate) || Boolean(person.deathPlace);
@@ -89,10 +105,19 @@ function PersonDetailsView({ person, relationToMe, actions }: { person: Person; 
         </div>
       )}
 
-      <section>
-        <h3 className="mb-1.5 text-[11px] font-medium tracking-wider text-zinc-500 uppercase">Biografia</h3>
-        {person.biography ? <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{person.biography}</p> : <p className="text-sm text-zinc-400 italic">Brak biografii.</p>}
-      </section>
+      {hasPhotos(PEOPLE.photos) && <Section title="Zdjęcia"><PhotoGallery personId={person.id} property={PEOPLE.photos} /></Section>}
+
+      {(person.cemetery || person.burialInfo || hasPhotos(PEOPLE.gravePhotos)) && (
+        <Section title="Pochówek">
+          <div className="space-y-2">
+            {person.cemetery && <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{person.cemetery}</p>}
+            {person.burialInfo && <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{person.burialInfo}</p>}
+            {hasPhotos(PEOPLE.gravePhotos) && <PhotoGallery personId={person.id} property={PEOPLE.gravePhotos} />}
+          </div>
+        </Section>
+      )}
+
+      {person.biography && <Section title="Biografia"><p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{person.biography}</p></Section>}
     </>
   );
 }
@@ -110,7 +135,7 @@ function DeleteConfirmation({ person, onCancel, onConfirm }: { person: Person; o
   );
 }
 
-function DrawerBody({ person, people, editing, isNew, describeUnion, unions, relationToMe, onShowConnection, actions, onSelect, onShowFamily, onClose }: Omit<PersonDrawerProps, 'person' | 'open'> & { person: Person }) {
+function DrawerBody({ person, people, editing, isNew, describeUnion, unions, relationToMe, notionPageId, onShowConnection, actions, onSelect, onShowFamily, onClose }: Omit<PersonDrawerProps, 'person' | 'open'> & { person: Person }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const siblings = useMemo(() => siblingIds(people, person.id), [people, person.id]);
   const exclude = useMemo(() => new Set([person.id, ...relativesOf(person), ...siblings]), [person, siblings]);
@@ -131,7 +156,7 @@ function DrawerBody({ person, people, editing, isNew, describeUnion, unions, rel
       </div>
       <div className="flex-1 space-y-6 overflow-y-auto p-5">
         {confirmingDelete && <DeleteConfirmation person={person} onCancel={() => setConfirmingDelete(false)} onConfirm={actions.onDelete} />}
-        {editing ? <PersonForm person={person} isNew={isNew} onSave={actions.onSaveDetails} onCancel={actions.onCancelEdit} /> : <PersonDetailsView person={person} relationToMe={relationToMe} actions={(
+        {editing ? <PersonForm person={person} isNew={isNew} notionPageId={notionPageId} onSave={actions.onSaveDetails} onCancel={actions.onCancelEdit} /> : <PersonDetailsView person={person} relationToMe={relationToMe} actions={(
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => onShowFamily(person.id)} className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300 ${onShowConnection && relationToMe ? '' : 'col-span-2'}`}>
               <Users className="size-3.5" />
@@ -145,12 +170,12 @@ function DrawerBody({ person, people, editing, isNew, describeUnion, unions, rel
             )}
           </div>
         )} />}
-        <div className="space-y-4">
+        {!editing && <div className="space-y-4">
           <RelativeList title="Rodzice" relation="parent" ids={person.parents} people={people} onSelect={onSelect} editing={relationEditing('parents', 'Dodaj rodzica', person.parents.length < 2)} />
-          <RelativeList title="Małżonkowie" relation="spouse" ids={person.spouses} people={people} onSelect={onSelect} editing={{ ...relationEditing('spouses', 'Dodaj małżonka'), presetGender: person.gender === 'M' ? 'F' : person.gender === 'F' ? 'M' : undefined }} describe={describeUnion ? (spouseId) => describeUnion(person.id, spouseId) : undefined} unionEditor={{ get: (spouseId) => unions.get(person.id, spouseId), save: (spouseId, details) => unions.save(person.id, spouseId, details) }} />
+          <RelativeList title="Związki" relation="spouse" ids={person.spouses} people={people} onSelect={onSelect} editing={{ ...relationEditing('spouses', 'Dodaj partnera'), presetGender: person.gender === 'M' ? 'F' : person.gender === 'F' ? 'M' : undefined }} describe={describeUnion ? (spouseId) => describeUnion(person.id, spouseId) : undefined} unionEditor={{ get: (spouseId) => unions.get(person.id, spouseId), save: (spouseId, details) => unions.save(person.id, spouseId, details) }} />
           <RelativeList title="Rodzeństwo" ids={siblings} people={people} onSelect={onSelect} editing={relationEditing('siblings', 'Dodaj rodzeństwo')} />
           <RelativeList title="Dzieci" relation="child" ids={person.children} people={people} onSelect={onSelect} editing={{ ...relationEditing('children', 'Dodaj dziecko'), secondParents: person.spouses.filter((id) => people.has(id)).map((id) => ({ id, label: displayName(people.get(id)!) })), onAdd: (id, secondParentId) => actions.onAddRelation('children', id, secondParentId), onCreate: (names, gender, secondParentId) => actions.onCreateRelative('children', names, gender, secondParentId) }} />
-        </div>
+        </div>}
       </div>
     </>
   );

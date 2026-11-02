@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
 import type { NotionLink, PeopleById, UnionDetails } from '../types/person';
-import { diffNotion, pushToNotion, type NotionChange } from '../lib/notion/notionPush';
+import { diffNotion, photoChanges, pushToNotion, type NotionChange } from '../lib/notion/notionPush';
+import type { PhotoOp } from '../lib/photoQueue';
 import { notionSettings } from '../lib/notion/notionSettings';
 import { NotionIcon } from './NotionIcon';
 import { countOf } from '../lib/plural';
@@ -10,6 +11,8 @@ interface NotionPushDialogProps {
   link: NotionLink;
   people: PeopleById;
   unions: Record<string, UnionDetails>;
+  photoOps: PhotoOp[];
+  onPhotosSaved: (opIds: string[]) => void;
   onPushed: (link: NotionLink) => void;
   onClose: () => void;
 }
@@ -23,12 +26,13 @@ const kindLabel: Record<NotionChange['kind'], { label: string; className: string
   'union-update': { label: 'Związek', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
   'union-rename': { label: 'Związek', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
   'union-trash': { label: 'Związek do kosza', className: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
+  photos: { label: 'Zdjęcia', className: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
 };
 
 type Phase = { kind: 'review' } | { kind: 'pushing'; done: number; total: number } | { kind: 'done'; saved: number } | { kind: 'failed'; error: string };
 
-export function NotionPushDialog({ link, people, unions, onPushed, onClose }: NotionPushDialogProps) {
-  const changes = useMemo(() => diffNotion(link, people, unions), [link, people, unions]);
+export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved, onPushed, onClose }: NotionPushDialogProps) {
+  const changes = useMemo(() => [...diffNotion(link, people, unions), ...photoChanges(photoOps, people)], [link, people, unions, photoOps]);
   const [token, setToken] = useState(notionSettings.token);
   const [phase, setPhase] = useState<Phase>({ kind: 'review' });
   const busy = phase.kind === 'pushing';
@@ -44,7 +48,7 @@ export function NotionPushDialog({ link, people, unions, onPushed, onClose }: No
     notionSettings.save(token.trim(), notionSettings.databaseInput());
     const saved = changes.length;
     setPhase({ kind: 'pushing', done: 0, total: 1 });
-    const result = await pushToNotion(token.trim(), link, people, unions, (done, total) => setPhase({ kind: 'pushing', done, total }));
+    const result = await pushToNotion(token.trim(), link, people, unions, photoOps, (done, total) => setPhase({ kind: 'pushing', done, total }), onPhotosSaved);
     onPushed(result.link);
     setPhase(result.error ? { kind: 'failed', error: result.applied ? `${result.error} Część zmian zapisano przed błędem; ponowienie wyśle pozostałe.` : result.error } : { kind: 'done', saved });
   };

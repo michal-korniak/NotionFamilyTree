@@ -1,5 +1,5 @@
 import { Home, Link2, Users, X } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface TabInfo {
   id: string;
@@ -22,9 +22,84 @@ const icons: Record<TabInfo['icon'], ReactNode> = {
   connection: <Link2 className="size-3.5" />,
 };
 
+const FADE = '2rem';
+const DRAG_THRESHOLD = 5;
+
+function edgeMask(start: boolean, end: boolean): string | undefined {
+  if (!start && !end) return undefined;
+  return `linear-gradient(to right, ${start ? `transparent, black ${FADE}` : 'black'}, ${end ? `black calc(100% - ${FADE}), transparent` : 'black'})`;
+}
+
 export function TabBar({ tabs, activeId, onActivate, onClose, onMenu }: TabBarProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState({ start: false, end: false });
+
+  const measure = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const start = list.scrollLeft > 1;
+    const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+    setOverflow((o) => (o.start === start && o.end === end ? o : { start, end }));
+  }, []);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    // A mouse wheel only scrolls vertically, which a one-row strip ignores; React's onWheel is passive, so the listener is attached by hand to be able to preventDefault.
+    const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || list.scrollWidth <= list.clientWidth) return;
+      event.preventDefault();
+      list.scrollLeft += event.deltaY;
+    };
+    // Without a visible scrollbar a mouse can grab the strip and drag it instead; touch screens already scroll it natively.
+    let drag: { pointerId: number; startX: number; startScroll: number; moved: boolean } | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse' || event.button !== 0 || list.scrollWidth <= list.clientWidth) return;
+      drag = { pointerId: event.pointerId, startX: event.clientX, startScroll: list.scrollLeft, moved: false };
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const dx = event.clientX - drag.startX;
+      if (!drag.moved && Math.abs(dx) < DRAG_THRESHOLD) return;
+      if (!drag.moved) { drag.moved = true; list.setPointerCapture(event.pointerId); list.style.cursor = 'grabbing'; }
+      list.scrollLeft = drag.startScroll - dx;
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (drag.moved) {
+        list.style.cursor = '';
+        const swallowClick = (click: MouseEvent) => { click.stopPropagation(); click.preventDefault(); };
+        list.addEventListener('click', swallowClick, { capture: true, once: true });
+        setTimeout(() => list.removeEventListener('click', swallowClick, { capture: true }), 0);
+      }
+      drag = null;
+    };
+    const resize = new ResizeObserver(measure);
+    resize.observe(list);
+    list.addEventListener('wheel', onWheel, { passive: false });
+    list.addEventListener('pointerdown', onPointerDown);
+    list.addEventListener('pointermove', onPointerMove);
+    list.addEventListener('pointerup', onPointerUp);
+    list.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      resize.disconnect();
+      list.removeEventListener('wheel', onWheel);
+      list.removeEventListener('pointerdown', onPointerDown);
+      list.removeEventListener('pointermove', onPointerMove);
+      list.removeEventListener('pointerup', onPointerUp);
+      list.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [measure]);
+
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    measure();
+  }, [activeId, tabs.length, measure]);
+
+  const mask = edgeMask(overflow.start, overflow.end);
   return (
-    <div role="tablist" aria-label="Otwarte drzewa" className="flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-zinc-200 bg-zinc-100/80 px-2 pt-1 dark:border-zinc-800 dark:bg-zinc-900/60">
+    <div className="h-9 shrink-0 border-b border-zinc-200 bg-zinc-100/80 dark:border-zinc-800 dark:bg-zinc-900/60">
+    <div ref={listRef} role="tablist" aria-label="Otwarte drzewa" onScroll={measure} style={{ maskImage: mask, WebkitMaskImage: mask }} className="flex h-full items-end gap-1 overflow-x-auto px-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         return (
@@ -34,13 +109,14 @@ export function TabBar({ tabs, activeId, onActivate, onClose, onMenu }: TabBarPr
               <span className="truncate">{tab.label}</span>
             </button>
             {tab.closable && (
-              <button type="button" onClick={() => onClose(tab.id)} aria-label={`Zamknij kartę: ${tab.label}`} title="Zamknij kartę" className={`mr-1.5 grid size-5 shrink-0 place-items-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 ${active ? '' : '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100'}`}>
+              <button type="button" onClick={() => onClose(tab.id)} aria-label={`Zamknij kartę: ${tab.label}`} title="Zamknij kartę" className={`mr-1.5 grid size-5 shrink-0 place-items-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 ${active ? '' : 'mouse:opacity-0 mouse:group-hover:opacity-100'}`}>
                 <X className="size-3" />
               </button>
             )}
           </div>
         );
       })}
+    </div>
     </div>
   );
 }

@@ -55,7 +55,7 @@ export function parseFamilyData(data: unknown): ParseResult {
     if (!id) { skipped++; continue; }
     if (seen.has(id)) { duplicates++; continue; }
     seen.add(id);
-    people.push({ id, name: asText(record.name) ?? `Unnamed (${id})`, birthDate: asText(record.birthDate), deathDate: asText(record.deathDate), birthPlace: asText(record.birthPlace), deathPlace: asText(record.deathPlace), gender: asGender(record.gender), parents: asIdList(record.parents), children: asIdList(record.children), spouses: asIdList(record.spouses), biography: asText(record.biography), givenNames: typeof record.givenNames === 'string' ? record.givenNames.trim() : undefined, birthSurname: typeof record.birthSurname === 'string' ? record.birthSurname.trim() : undefined, marriedSurname: typeof record.marriedSurname === 'string' ? record.marriedSurname.trim() : undefined });
+    people.push({ id, name: asText(record.name) ?? `Unnamed (${id})`, birthDate: asText(record.birthDate), deathDate: asText(record.deathDate), birthPlace: asText(record.birthPlace), deathPlace: asText(record.deathPlace), cemetery: asText(record.cemetery), burialInfo: asText(record.burialInfo), gender: asGender(record.gender), parents: asIdList(record.parents), children: asIdList(record.children), spouses: asIdList(record.spouses), biography: asText(record.biography), givenNames: typeof record.givenNames === 'string' ? record.givenNames.trim() : undefined, birthSurname: typeof record.birthSurname === 'string' ? record.birthSurname.trim() : undefined, marriedSurname: typeof record.marriedSurname === 'string' ? record.marriedSurname.trim() : undefined });
   }
 
   if (people.length === 0) return { ok: false, error: 'Nie znaleziono poprawnych osób. Każdy wpis musi mieć co najmniej "id".' };

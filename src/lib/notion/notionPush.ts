@@ -1,8 +1,10 @@
 import { unionKey, type NotionLink, type PeopleById, type Person, type UnionDetails } from '../../types/person';
 import { NotionClient } from './notionClient';
+import { applyPhotoChanges } from './notionPhotos';
+import type { PhotoOp } from '../photoQueue';
 import { DETAIL_FIELDS, detailProperties, externalIdProperty, parentProperties, unionDetailProperties, unionProperties, unionTitleProperty, type DetailField } from './notionMapping';
 
-export type ChangeKind = 'create' | 'restore' | 'update' | 'trash' | 'union-create' | 'union-rename' | 'union-update' | 'union-trash';
+export type ChangeKind = 'create' | 'restore' | 'update' | 'trash' | 'union-create' | 'union-rename' | 'union-update' | 'union-trash' | 'photos';
 
 export interface NotionChange {
   kind: ChangeKind;
@@ -84,7 +86,7 @@ function plan(link: NotionLink, current: PeopleById, unions: Record<string, Unio
   return result;
 }
 
-const fieldLabels: Record<DetailField, string> = { name: 'imię i nazwisko', givenNames: 'imiona', birthSurname: 'nazwisko rodowe', marriedSurname: 'nazwisko', gender: 'płeć', birthDate: 'data urodzenia', deathDate: 'data śmierci', birthPlace: 'miejsce urodzenia', deathPlace: 'miejsce śmierci', biography: 'notatki' };
+const fieldLabels: Record<DetailField, string> = { name: 'imię i nazwisko', givenNames: 'imiona', birthSurname: 'nazwisko rodowe', marriedSurname: 'nazwisko', gender: 'płeć', birthDate: 'data urodzenia', deathDate: 'data śmierci', birthPlace: 'miejsce urodzenia', deathPlace: 'miejsce śmierci', cemetery: 'cmentarz', burialInfo: 'informacje o pochówku', biography: 'notatki' };
 
 export function diffNotion(link: NotionLink, current: PeopleById, unions: Record<string, UnionDetails>): NotionChange[] {
   const p = plan(link, current, unions);
@@ -102,6 +104,34 @@ export function diffNotion(link: NotionLink, current: PeopleById, unions: Record
   ];
 }
 
+interface PhotoGroup {
+  personId: string;
+  property: string;
+  ops: PhotoOp[];
+}
+
+// Photos of a person who is no longer in the tree are left out: their page is about to go to the trash anyway.
+function photoGroups(ops: PhotoOp[], current: PeopleById): PhotoGroup[] {
+  const groups = new Map<string, PhotoGroup>();
+  for (const op of ops) {
+    if (!current.has(op.personId)) continue;
+    const key = `${op.personId}|${op.property}`;
+    const group = groups.get(key) ?? { personId: op.personId, property: op.property, ops: [] };
+    group.ops.push(op);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+export function photoChanges(ops: PhotoOp[], current: PeopleById): NotionChange[] {
+  return photoGroups(ops, current).map(({ personId, property, ops: groupOps }) => {
+    const added = groupOps.filter((op) => op.kind === 'add').length;
+    const removed = groupOps.length - added;
+    const counts = [added ? `+${added}` : '', removed ? `−${removed}` : ''].filter(Boolean).join(' ');
+    return { kind: 'photos' as const, key: `${personId}:${property}`, label: current.get(personId)!.name, detail: `${property.toLowerCase()} ${counts}` };
+  });
+}
+
 function newExternalId(taken: Set<string>): string {
   let id: string;
   do id = `APP-${Math.random().toString(36).slice(2, 8).toUpperCase()}`; while (taken.has(id));
@@ -109,19 +139,21 @@ function newExternalId(taken: Set<string>): string {
 }
 
 // Each successful request updates the baseline for exactly what it wrote, so after a failure a retry only sends what is still different.
-export async function pushToNotion(token: string, link: NotionLink, current: PeopleById, currentUnions: Record<string, UnionDetails>, onProgress: (done: number, total: number) => void): Promise<PushResult> {
+export async function pushToNotion(token: string, link: NotionLink, current: PeopleById, currentUnions: Record<string, UnionDetails>, photoOps: PhotoOp[], onProgress: (done: number, total: number) => void, onPhotosSaved: (opIds: string[]) => void): Promise<PushResult> {
   const client = new NotionClient(token);
   const p = plan(link, current, currentUnions);
+  const photoChangeGroups = photoGroups(photoOps, current);
   const originalBaseline = new Map(link.baseline.map((person) => [person.id, person]));
   const baseline = new Map(originalBaseline);
   const pageIds = { ...link.pageIds };
   const externalIds = { ...link.externalIds };
   const unions = { ...link.unions };
+  const photos = { ...link.photos };
   const knownExternalIds = new Set(Object.values(externalIds));
-  const total = p.created.length * 2 + p.restored.length * 2 + p.updated.length + p.unionsCreated.length + p.unionsRenamed.length + p.unionsUpdated.length + p.unionsTrashed.length + p.trashed.length;
+  const total = p.created.length * 2 + p.restored.length * 2 + p.updated.length + p.unionsCreated.length + p.unionsRenamed.length + p.unionsUpdated.length + p.unionsTrashed.length + p.trashed.length + photoChangeGroups.length;
   let applied = 0;
   const step = () => onProgress(++applied, total);
-  const result = (error?: string): PushResult => ({ link: { ...link, pageIds, externalIds, unions, baseline: [...baseline.values()], syncedAt: new Date().toISOString() }, applied, error });
+  const result = (error?: string): PushResult => ({ link: { ...link, pageIds, externalIds, unions, photos, baseline: [...baseline.values()], syncedAt: new Date().toISOString() }, applied, error });
   const setSpouses = (id: string, update: (spouses: string[]) => string[]) => { const base = baseline.get(id); if (base) baseline.set(id, { ...base, spouses: update(base.spouses) }); };
 
   try {
@@ -182,6 +214,15 @@ export async function pushToNotion(token: string, link: NotionLink, current: Peo
       delete unions[key];
       setSpouses(a, (s) => s.filter((id) => id !== b));
       setSpouses(b, (s) => s.filter((id) => id !== a));
+      step();
+    }
+
+    for (const { personId, property, ops } of photoChangeGroups) {
+      const adds = ops.flatMap((op) => (op.kind === 'add' ? [{ blob: op.blob, filename: op.filename }] : []));
+      const removeKeys = ops.flatMap((op) => (op.kind === 'remove' ? [op.fileKey] : []));
+      const listing = await applyPhotoChanges(client, pageIds[personId]!, property, adds, removeKeys);
+      photos[personId] = { ...photos[personId], [property]: listing };
+      onPhotosSaved(ops.map((op) => op.id));
       step();
     }
 

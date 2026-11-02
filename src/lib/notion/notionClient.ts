@@ -32,6 +32,7 @@ export interface NotionPage {
   id: string;
   url: string;
   in_trash?: boolean;
+  last_edited_time?: string;
   properties: Record<string, NotionPropertyValue>;
 }
 
@@ -87,7 +88,9 @@ export class NotionClient {
 
     let response: Response;
     try {
-      response = await fetch(`${API_BASE}${path}`, { method, headers: { Authorization: `Bearer ${this.token}`, 'Notion-Version': NOTION_VERSION, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      // FormData gets its multipart Content-Type (with the boundary) from fetch itself.
+      const isForm = body instanceof FormData;
+      response = await fetch(`${API_BASE}${path}`, { method, headers: { Authorization: `Bearer ${this.token}`, 'Notion-Version': NOTION_VERSION, ...(isForm ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : isForm ? body : JSON.stringify(body) });
     } catch {
       if (attempt < MAX_ATTEMPTS) { await wait(1000 * attempt); return this.send(method, path, body, attempt + 1); }
       throw new NotionError(0, 'network', 'Błąd sieci podczas komunikacji z Notion.');
@@ -128,11 +131,12 @@ export class NotionClient {
     return databases;
   }
 
-  async queryAllPages(dataSourceId: string, onProgress?: (loaded: number) => void): Promise<NotionPage[]> {
+  async queryAllPages(dataSourceId: string, onProgress?: (loaded: number) => void, options: { filter?: unknown; onlyProperties?: string[] } = {}): Promise<NotionPage[]> {
     const pages: NotionPage[] = [];
+    const query = options.onlyProperties ? `?${options.onlyProperties.map((p) => `filter_properties[]=${encodeURIComponent(p)}`).join('&')}` : '';
     let cursor: string | null = null;
     do {
-      const list: NotionList<NotionPage> = await this.request('POST', `/data_sources/${dataSourceId}/query`, { page_size: 100, result_type: 'page', ...(cursor ? { start_cursor: cursor } : {}) });
+      const list: NotionList<NotionPage> = await this.request('POST', `/data_sources/${dataSourceId}/query${query}`, { page_size: 100, result_type: 'page', ...(options.filter ? { filter: options.filter } : {}), ...(cursor ? { start_cursor: cursor } : {}) });
       pages.push(...list.results.filter((r) => r.object === 'page'));
       onProgress?.(pages.length);
       cursor = list.has_more ? list.next_cursor : null;
@@ -159,5 +163,17 @@ export class NotionClient {
 
   updatePage(pageId: string, body: { properties?: Record<string, unknown>; in_trash?: boolean }): Promise<NotionPage> {
     return this.request('PATCH', `/pages/${pageId}`, body);
+  }
+
+  retrievePage(pageId: string, onlyProperties: string[]): Promise<NotionPage> {
+    return this.request('GET', `/pages/${pageId}?${onlyProperties.map((p) => `filter_properties[]=${encodeURIComponent(p)}`).join('&')}`);
+  }
+
+  async uploadFile(file: Blob, filename: string): Promise<string> {
+    const upload = await this.request<{ id: string }>('POST', '/file_uploads', { mode: 'single_part', filename, content_type: file.type });
+    const form = new FormData();
+    form.append('file', file, filename);
+    await this.request('POST', `/file_uploads/${upload.id}/send`, form);
+    return upload.id;
   }
 }
