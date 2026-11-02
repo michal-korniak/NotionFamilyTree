@@ -1,4 +1,4 @@
-import { Minus, Plus, SlidersHorizontal } from 'lucide-react';
+import { LocateFixed, Minus, Plus, SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { DEGREE_RANGES, type DegreeRange, type FamilyDegrees } from '../lib/familyView';
 import { countOf, plural } from '../lib/plural';
@@ -11,6 +11,7 @@ interface ViewControlsProps {
   shownCount: number;
   totalCount: number;
   onDegreeChange: (kind: keyof FamilyDegrees, delta: number) => void;
+  onCenterRoot?: () => void;
 }
 
 const panelClass = 'pointer-events-auto flex flex-wrap items-center rounded-lg border border-zinc-200 bg-white/90 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90';
@@ -53,7 +54,7 @@ const controls: { kind: keyof FamilyDegrees; label: string; describe: (value: nu
 function Stepper({ label, value, range, description, onChange }: { label: string; value: number; range: DegreeRange; description: string; onChange: (delta: number) => void }) {
   const button = 'grid size-6 place-items-center rounded text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-zinc-100';
   return (
-    <div className="flex h-[30px] items-center justify-between gap-1 px-1.5" title={`${label} — ${description}`}>
+    <div className="flex h-[30px] items-center justify-between gap-1 px-1.5 max-sm:gap-0.5 max-sm:px-1" title={`${label} — ${description}`}>
       <span className="mr-auto pl-1 text-xs text-zinc-500">{label}</span>
       <button type="button" className={button} onClick={() => onChange(-1)} disabled={value <= range.min} aria-label={`${label}: mniej`}><Minus className="size-3" /></button>
       <span className="w-3 text-center font-mono text-xs tabular-nums">{value}</span>
@@ -72,7 +73,7 @@ function FilterPanel({ degrees, onDegreeChange, className = '' }: { degrees: Fam
   );
 }
 
-export function ViewControls({ degrees, rootName, isMine, connection, shownCount, totalCount, onDegreeChange }: ViewControlsProps) {
+export function ViewControls({ degrees, rootName, isMine, connection, shownCount, totalCount, onDegreeChange, onCenterRoot }: ViewControlsProps) {
   // On a phone the filters can be hidden, as they cover a good part of the tree; the heading is left out there as the tab already names the tree.
   const [filtersHidden, setFiltersHidden] = useState(readFiltersHidden);
   const toggleFilters = () => setFiltersHidden((hidden) => {
@@ -97,9 +98,12 @@ export function ViewControls({ degrees, rootName, isMine, connection, shownCount
       </div>
     </div>
     {!connection && degrees && (
-      <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] items-start gap-2 sm:hidden">
-        <button type="button" onClick={toggleFilters} aria-pressed={!filtersHidden} aria-label={filtersHidden ? 'Pokaż filtry' : 'Ukryj filtry'} title={filtersHidden ? 'Pokaż filtry' : 'Ukryj filtry'} className={`pointer-events-auto grid size-8 shrink-0 place-items-center rounded-lg border shadow-sm backdrop-blur sm:hidden ${filtersHidden ? 'border-zinc-200 bg-white/90 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/90' : 'border-zinc-300 bg-zinc-100/90 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-100'}`}><SlidersHorizontal className="size-3.5" /></button>
-        {!filtersHidden && <FilterPanel degrees={degrees} onDegreeChange={onDegreeChange} />}
+      <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-start gap-2 sm:hidden">
+        <div className="flex shrink-0 gap-2">
+          {onCenterRoot && rootName && <button type="button" onClick={onCenterRoot} aria-label={`Wyśrodkuj: ${rootName}`} title={`Wyśrodkuj: ${rootName}`} className="pointer-events-auto grid size-8 shrink-0 place-items-center rounded-lg border shadow-sm backdrop-blur sm:hidden border-zinc-200 bg-white/90 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/90"><LocateFixed className="size-3.5" /></button>}
+          <button type="button" onClick={toggleFilters} aria-pressed={!filtersHidden} aria-label={filtersHidden ? 'Pokaż filtry' : 'Ukryj filtry'} title={filtersHidden ? 'Pokaż filtry' : 'Ukryj filtry'} className={`pointer-events-auto grid size-8 shrink-0 place-items-center rounded-lg border shadow-sm backdrop-blur sm:hidden ${filtersHidden ? 'border-zinc-200 bg-white/90 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/90' : 'border-zinc-300 bg-zinc-100/90 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-100'}`}><SlidersHorizontal className="size-3.5" /></button>
+        </div>
+        {!filtersHidden && <FilterPanel degrees={degrees} onDegreeChange={onDegreeChange} className="shrink-0 grid-cols-1!" />}
       </div>
     )}
     </>
