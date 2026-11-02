@@ -40,7 +40,7 @@ interface TopBarProps {
 export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onCloseAllTabs, onExportGedcom, onShowCemeteries }: TopBarProps) {
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur sm:gap-4 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950/80">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="hidden min-w-0 items-center gap-2 sm:flex">
         <button type="button" onClick={onGoHome} title="Przejdź do mojego drzewa" aria-label="Przejdź do mojego drzewa" className="grid size-7 shrink-0 place-items-center rounded-md bg-zinc-900 text-white transition-opacity hover:opacity-80 dark:bg-zinc-100 dark:text-zinc-900">
           <Network className="size-4" />
         </button>
