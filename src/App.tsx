@@ -334,7 +334,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
       {connectionFromId && people.has(connectionFromId) && <PersonPickDialog title={`Powiązanie: ${displayName(people.get(connectionFromId)!)} ↔ …`} people={people} exclude={new Set([connectionFromId])} onPick={(toId) => { openConnectionTab(connectionFromId, toId); setConnectionFromId(null); if (isPhoneLayout()) close(); }} onClose={() => setConnectionFromId(null)} />}
       {updateWaiting && (
         <div role="status" className="fixed bottom-4 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
-          <span>Jest nowa wersja aplikacji. Wczyta się po zamknięciu formularza.</span>
+          <span>Dostępna jest nowa wersja aplikacji.</span>
           <button type="button" onClick={() => location.reload()} className="shrink-0 font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100">Odśwież teraz</button>
         </div>
       )}
