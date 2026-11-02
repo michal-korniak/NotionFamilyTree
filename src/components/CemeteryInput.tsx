@@ -8,7 +8,7 @@ export function cemeteryNames(graves: Record<string, GraveDetails>): string[] {
   return [...new Set(Object.values(graves).map((grave) => grave.cemetery?.trim()).filter((name): name is string => Boolean(name)))].sort(collator.compare);
 }
 
-// Picking a cemetery from the list keeps one spelling per cemetery, so the Cmentarze view groups its graves together; a new one is typed in.
+// Picking a cemetery from the list keeps one spelling per cemetery, so the Groby view groups its graves together; a new one is typed in.
 export function CemeteryInput({ value, onChange, graves, className }: { value: string; onChange: (value: string) => void; graves: Record<string, GraveDetails>; className: string }) {
   const names = useMemo(() => cemeteryNames(graves), [graves]);
   const [typing, setTyping] = useState(() => value.trim() !== '' && !names.includes(value.trim()));

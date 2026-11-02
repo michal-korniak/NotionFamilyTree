@@ -172,7 +172,7 @@ export function CemeteriesDialog({ people, graves, withPhotos, onSelectPerson, o
         <div className="flex items-center gap-2.5 border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
           <Church className="size-5 text-zinc-500" />
           <div className="min-w-0 flex-1">
-            <h2 id="cemeteries-title" className="text-sm font-semibold">{merging ? 'Połącz groby' : 'Cmentarze'}</h2>
+            <h2 id="cemeteries-title" className="text-sm font-semibold">{merging ? 'Połącz groby' : 'Groby'}</h2>
             <p className="text-xs text-zinc-500">{merging ? 'Wszyscy pochowani trafią do jednego grobu.' : `${countOf(groups.length, 'cmentarz', 'cmentarze', 'cmentarzy')} · ${countOf(graveCount, 'grób', 'groby', 'grobów')} · ${countOf(buriedCount, 'osoba', 'osoby', 'osób')}`}</p>
           </div>
           {!merging && graveCount > 1 && <button type="button" onClick={() => { setEditing(null); setSelecting((ids) => (ids ? null : [])); }} className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium ${selecting ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}><Combine className="size-3.5" />Połącz groby</button>}

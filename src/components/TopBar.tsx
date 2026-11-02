@@ -86,11 +86,12 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
         )}
         <MoreMenu compactItems={[
           { label: 'Dodaj osobę', icon: <UserPlus className="size-3.5" />, onSelect: onAddPerson },
+          { label: 'Zarządzaj grobami', icon: <Church className="size-3.5" />, onSelect: onShowCemeteries },
+          'separator',
           { label: 'Cofnij', icon: <Undo2 className="size-3.5" />, disabled: !canUndo, onSelect: onUndo },
           { label: 'Ponów', icon: <Redo2 className="size-3.5" />, disabled: !canRedo, onSelect: onRedo },
-          { label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme },
           { label: 'Zamknij wszystkie karty', icon: <X className="size-3.5" />, disabled: !onCloseAllTabs, onSelect: () => onCloseAllTabs?.() },
-        ]} onChangeMe={onChangeMe} onShowCemeteries={onShowCemeteries} onExportGedcom={onExportGedcom} onClose={onReset} />
+        ]} themeItem={{ label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme }} onChangeMe={onChangeMe} onShowCemeteries={onShowCemeteries} onExportGedcom={onExportGedcom} onClose={onReset} />
       </div>
     </header>
   );
@@ -100,7 +101,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
 interface CompactMenuItem { label: string; icon: ReactNode; disabled?: boolean; onSelect: () => void }
 
 // On narrow screens the top bar has no room for undo/redo, refresh and the theme switch, so they move into this menu.
-function MoreMenu({ compactItems, onChangeMe, onShowCemeteries, onExportGedcom, onClose }: { compactItems: CompactMenuItem[]; onChangeMe: () => void; onShowCemeteries: () => void; onExportGedcom: () => void; onClose: () => void }) {
+function MoreMenu({ compactItems, themeItem, onChangeMe, onShowCemeteries, onExportGedcom, onClose }: { compactItems: (CompactMenuItem | 'separator')[]; themeItem: CompactMenuItem; onChangeMe: () => void; onShowCemeteries: () => void; onExportGedcom: () => void; onClose: () => void }) {
   const install = useInstallPrompt();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -124,25 +125,29 @@ function MoreMenu({ compactItems, onChangeMe, onShowCemeteries, onExportGedcom, 
       {open && (
         <div role="menu" className="absolute top-full right-0 z-50 mt-1 w-64 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
           <div className="sm:hidden">
-            {compactItems.map((entry) => (
+            {compactItems.map((entry, index) => entry === 'separator' ? <div key={`separator-${index}`} className="my-1 h-px bg-zinc-100 dark:bg-zinc-800" /> : (
               <button key={entry.label} type="button" role="menuitem" disabled={entry.disabled} onClick={choose(entry.onSelect)} className={`${item} text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800`}>
                 {entry.icon}
                 {entry.label}
               </button>
             ))}
-            <div className="my-1 h-px bg-zinc-100 dark:bg-zinc-800" />
           </div>
+          <button type="button" role="menuitem" onClick={choose(onShowCemeteries)} className={`${item} max-sm:hidden text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
+            <Church className="size-3.5" />
+            Zarządzaj grobami
+          </button>
           <button type="button" role="menuitem" onClick={choose(onChangeMe)} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
             <UserRound className="size-3.5" />
-            Zmień, kim jestem…
+            Zmień użytkownika
           </button>
-          <button type="button" role="menuitem" onClick={choose(onShowCemeteries)} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
-            <Church className="size-3.5" />
-            Cmentarze
+          <button type="button" role="menuitem" onClick={choose(themeItem.onSelect)} className={`${item} text-zinc-700 hover:bg-zinc-100 sm:hidden dark:text-zinc-300 dark:hover:bg-zinc-800`}>
+            {themeItem.icon}
+            {themeItem.label}
           </button>
-          <button type="button" role="menuitem" onClick={choose(onExportGedcom)} title="Plik do programów genealogicznych (MyHeritage, Ancestry, Gramps)" className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
+          <div className="my-1 h-px bg-zinc-100 dark:bg-zinc-800" />
+          <button type="button" role="menuitem" onClick={choose(onExportGedcom)} title="Plik do programów genealogicznych (MyHeritage, Ancestry, Gramps)" className={`${item} max-sm:hidden text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
             <FileDown className="size-3.5" />
-            Pobierz GEDCOM
+            Eksportuj GEDCOM
           </button>
           {install && (
             <button type="button" role="menuitem" onClick={choose(() => void install())} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
@@ -150,7 +155,7 @@ function MoreMenu({ compactItems, onChangeMe, onShowCemeteries, onExportGedcom, 
               Zainstaluj aplikację
             </button>
           )}
-          <div className="my-1 h-px bg-zinc-100 dark:bg-zinc-800" />
+          <div className={`my-1 h-px bg-zinc-100 dark:bg-zinc-800 ${install ? '' : 'max-sm:hidden'}`} />
           <button type="button" role="menuitem" onClick={choose(onClose)} className={`${item} text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40`}>
             <LogOut className="size-3.5" />
             Zamknij drzewo…
