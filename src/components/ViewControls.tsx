@@ -54,7 +54,7 @@ function Stepper({ label, value, range, description, onChange }: { label: string
   const button = 'grid size-6 place-items-center rounded text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-zinc-100';
   return (
     <div className="flex h-[30px] items-center justify-between gap-1 px-1.5" title={`${label} — ${description}`}>
-      <span className="pl-1 text-xs text-zinc-500">{label}</span>
+      <span className="mr-auto pl-1 text-xs text-zinc-500">{label}</span>
       <button type="button" className={button} onClick={() => onChange(-1)} disabled={value <= range.min} aria-label={`${label}: mniej`}><Minus className="size-3" /></button>
       <span className="w-3 text-center font-mono text-xs tabular-nums">{value}</span>
       <button type="button" className={button} onClick={() => onChange(1)} disabled={value >= range.max} aria-label={`${label}: więcej`}><Plus className="size-3" /></button>
@@ -73,7 +73,7 @@ function FilterPanel({ degrees, onDegreeChange, className = '' }: { degrees: Fam
 }
 
 export function ViewControls({ degrees, rootName, isMine, connection, shownCount, totalCount, onDegreeChange }: ViewControlsProps) {
-  // On a phone the filters sit at the bottom, within thumb reach, and can be hidden as they cover a good part of the tree; the heading is left out there as the tab already names the tree.
+  // On a phone the filters can be hidden, as they cover a good part of the tree; the heading is left out there as the tab already names the tree.
   const [filtersHidden, setFiltersHidden] = useState(readFiltersHidden);
   const toggleFilters = () => setFiltersHidden((hidden) => {
     try { localStorage.setItem(FILTERS_HIDDEN_KEY, hidden ? '0' : '1'); } catch { /* the choice is just not remembered */ }
@@ -97,7 +97,7 @@ export function ViewControls({ degrees, rootName, isMine, connection, shownCount
       </div>
     </div>
     {!connection && degrees && (
-      <div className="pointer-events-none absolute bottom-[15px] left-[15px] z-10 flex max-w-[calc(100%-30px)] items-end gap-2 sm:hidden">
+      <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] items-start gap-2 sm:hidden">
         <button type="button" onClick={toggleFilters} aria-pressed={!filtersHidden} aria-label={filtersHidden ? 'Pokaż filtry' : 'Ukryj filtry'} title={filtersHidden ? 'Pokaż filtry' : 'Ukryj filtry'} className={`pointer-events-auto grid size-8 shrink-0 place-items-center rounded-lg border shadow-sm backdrop-blur sm:hidden ${filtersHidden ? 'border-zinc-200 bg-white/90 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/90' : 'border-zinc-300 bg-zinc-100/90 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-100'}`}><SlidersHorizontal className="size-3.5" /></button>
         {!filtersHidden && <FilterPanel degrees={degrees} onDegreeChange={onDegreeChange} />}
       </div>
