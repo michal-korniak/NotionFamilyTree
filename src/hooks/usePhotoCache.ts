@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { NotionLink } from '../types/person';
+import type { NotionLink, StoredPhoto } from '../types/person';
 import { photoCache } from '../lib/photoQueue';
-import { downloadToCache, refreshPhotoUrls } from '../lib/notion/notionPhotos';
+import { cacheThumbnail, refreshPhotoUrls } from '../lib/notion/notionPhotos';
 import { NotionClient } from '../lib/notion/notionClient';
 import { PHOTO_PROPERTIES } from '../lib/notion/notionMapping';
 import { notionSettings } from '../lib/notion/notionSettings';
@@ -15,7 +15,7 @@ export interface PhotoCacheState {
 
 const PARALLEL_DOWNLOADS = 3;
 
-// Keeps a local copy of every photo listed in link.photos: removes the ones no longer in Notion and downloads the rest in the background.
+// Keeps a thumbnail of every photo listed in link.photos: removes the ones no longer in Notion and fetches the rest in the background.
 export function usePhotoCache(link: NotionLink | undefined): PhotoCacheState {
   const [cached, setCached] = useState<ReadonlySet<string>>(new Set());
   const [missing, setMissing] = useState(0);
@@ -24,8 +24,8 @@ export function usePhotoCache(link: NotionLink | undefined): PhotoCacheState {
 
   useEffect(() => {
     let cancelled = false;
-    const owners = new Map<string, string>();
-    for (const [personId, columns] of Object.entries(link?.photos ?? {})) for (const photos of Object.values(columns)) for (const photo of photos) owners.set(photo.key, personId);
+    const owners = new Map<string, { personId: string; photo: StoredPhoto }>();
+    for (const [personId, columns] of Object.entries(link?.photos ?? {})) for (const photos of Object.values(columns)) for (const photo of photos) owners.set(photo.key, { personId, photo });
 
     void (async () => {
       const stored = await photoCache.keys().catch(() => [] as string[]);
@@ -48,13 +48,13 @@ export function usePhotoCache(link: NotionLink | undefined): PhotoCacheState {
       const worker = async () => {
         for (let key = next(); key && !cancelled; key = next()) {
           try {
-            let done = await downloadToCache(key);
-            const personId = owners.get(key)!;
+            const { personId, photo } = owners.get(key)!;
+            let done = await cacheThumbnail(photo);
             const pageId = link.pageIds[personId];
             if (!done && client && pageId && !refreshed.has(personId)) {
               refreshed.add(personId);
               await refreshPhotoUrls(client, pageId, PHOTO_PROPERTIES);
-              done = await downloadToCache(key);
+              done = await cacheThumbnail(photo);
             }
             if (!done) throw new Error('no link');
             if (!cancelled) { setCached((current) => new Set([...current, key])); setMissing((m) => m - 1); }

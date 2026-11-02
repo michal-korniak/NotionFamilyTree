@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { compressImage } from '../lib/notion/notionPhotos';
+import { compressImage, makeThumbnail } from '../lib/notion/notionPhotos';
 import { newPhotoOpId, photoFileKey, photoQueue, type PhotoOp } from '../lib/photoQueue';
 import type { StoredPhoto } from '../types/person';
 import type { PhotoCacheState } from './usePhotoCache';
@@ -24,10 +24,13 @@ export function usePhotoQueue() {
     await Promise.all(ids.map((id) => photoQueue.delete(id).catch(() => undefined)));
   }, []);
 
+  // The short suffix keeps names unique within a column, since a thumbnail is matched to its photo by name.
   const add = useCallback(async (personId: string, property: string, file: File) => {
     const blob = await compressImage(file);
-    const filename = `${file.name.replace(/\.[^.]+$/, '') || 'zdjecie'}.${blob.type === 'image/jpeg' ? 'jpg' : blob.type.split('/')[1] ?? 'jpg'}`;
-    await store({ id: newPhotoOpId(), kind: 'add', personId, property, blob, filename });
+    const thumb = await makeThumbnail(blob);
+    const id = newPhotoOpId();
+    const filename = `${file.name.replace(/\.[^.]+$/, '') || 'zdjecie'}-${id.slice(-4)}.${blob.type === 'image/jpeg' ? 'jpg' : blob.type.split('/')[1] ?? 'jpg'}`;
+    await store({ id, kind: 'add', personId, property, blob, thumb, filename });
   }, [store]);
 
   // Removing a photo that is still only queued just forgets it; removing one already in Notion queues its removal.
@@ -50,6 +53,8 @@ export interface PhotosContextValue {
   queue: PhotoQueue;
   cache: PhotoCacheState;
   listing: Record<string, Record<string, StoredPhoto[]>>;
+  // The full photo is not kept locally; this asks Notion for a link to it.
+  openFull: (personId: string, key: string) => Promise<string>;
 }
 
 export const PhotosContext = createContext<PhotosContextValue | null>(null);

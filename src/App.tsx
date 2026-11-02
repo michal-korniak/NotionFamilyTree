@@ -28,7 +28,9 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { diffNotion, photoChanges } from './lib/notion/notionPush';
 import { PhotosContext, usePhotoQueue } from './hooks/usePhotoQueue';
 import { usePhotoCache } from './hooks/usePhotoCache';
-import { describeUnion, refreshNotionDatabase, type NotionImport } from './lib/notion/notionMapping';
+import { describeUnion, PHOTO_PROPERTIES, refreshNotionDatabase, type NotionImport } from './lib/notion/notionMapping';
+import { fullPhotoUrl } from './lib/notion/notionPhotos';
+import { NotionClient } from './lib/notion/notionClient';
 import { unionKey, type Gender, type UnionDetails } from './types/person';
 
 interface ExplorerProps {
@@ -89,7 +91,13 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const unionAccess = useMemo(() => ({ get: (a: string, b: string) => tree.unions[unionKey(a, b)], save: (a: string, b: string, details: UnionDetails) => updateUnion(unionKey(a, b), details) }), [tree.unions, updateUnion]);
   const photos = usePhotoQueue();
   const photoCacheState = usePhotoCache(tree.notion);
-  const photosContext = useMemo(() => ({ queue: photos, cache: photoCacheState, listing: tree.notion?.photos ?? {} }), [photos, photoCacheState, tree.notion?.photos]);
+  const openFullPhoto = useCallback(async (personId: string, key: string) => {
+    const token = notionSettings.token();
+    const pageId = tree.notion?.pageIds[personId];
+    if (!token || !pageId) throw new Error('Aby otworzyć zdjęcie, potrzebny jest token Notion.');
+    return fullPhotoUrl(new NotionClient(token), pageId, key, PHOTO_PROPERTIES);
+  }, [tree.notion]);
+  const photosContext = useMemo(() => ({ queue: photos, cache: photoCacheState, listing: tree.notion?.photos ?? {}, openFull: openFullPhoto }), [photos, photoCacheState, tree.notion?.photos, openFullPhoto]);
   const notionPending = useMemo(() => (tree.notion ? diffNotion(tree.notion, people, tree.unions).length + photoChanges(photos.ops, people).length : undefined), [tree.notion, people, tree.unions, photos.ops]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);

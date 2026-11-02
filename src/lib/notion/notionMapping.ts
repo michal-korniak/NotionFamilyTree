@@ -38,7 +38,7 @@ export const UNIONS = {
 } as const;
 
 // Bump when the import starts reading another column, so the next refresh reads every page again instead of only the edited ones.
-export const NOTION_FIELDS_VERSION = 4;
+export const NOTION_FIELDS_VERSION = 5;
 
 export const PHOTO_PROPERTIES = [PEOPLE.photos, PEOPLE.gravePhotos] as const;
 

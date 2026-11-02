@@ -3,6 +3,7 @@ import { ImageOff, ImagePlus, Loader2, X } from 'lucide-react';
 import { photoCache } from '../lib/photoQueue';
 import { usePhotosContext } from '../hooks/usePhotoQueue';
 import { ConfirmDialog } from './ConfirmDialog';
+import { PhotoViewer } from './PhotoViewer';
 
 interface PhotoGalleryProps {
   personId: string;
@@ -16,9 +17,10 @@ interface ShownPhoto {
   name: string;
   // Set for a photo already in Notion; its image comes from the local cache.
   key?: string;
-  // Set for a photo waiting for "Zapisz zmiany".
+  // Set for a photo waiting for "Zapisz zmiany": its thumbnail shows in the tile, the full photo in the viewer.
   pendingId?: string;
   blob?: Blob;
+  full?: Blob;
 }
 
 // The URL is created inside the effect that revokes it: created during render, a remount (React's StrictMode does one on purpose) would revoke it while the <img> still uses it.
@@ -33,7 +35,7 @@ function useObjectUrl(blob: Blob | undefined): string | undefined {
   return url;
 }
 
-function PhotoTile({ photo, cached, failed, onRemove }: { photo: ShownPhoto; cached: boolean; failed: boolean; onRemove?: () => void }) {
+function PhotoTile({ photo, cached, failed, onOpen, onRemove }: { photo: ShownPhoto; cached: boolean; failed: boolean; onOpen: () => void; onRemove?: () => void }) {
   const [blob, setBlob] = useState<Blob | undefined>(photo.blob);
   useEffect(() => {
     if (photo.blob || !photo.key || !cached) return;
@@ -46,7 +48,7 @@ function PhotoTile({ photo, cached, failed, onRemove }: { photo: ShownPhoto; cac
   return (
     <li className="group/photo relative aspect-square overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
       {url ? (
-        <a href={url} target="_blank" rel="noreferrer" title={photo.name}><img src={url} alt={photo.name} className="size-full object-cover" /></a>
+        <button type="button" onClick={onOpen} title={photo.name} className="block size-full"><img src={url} alt={photo.name} className="size-full object-cover" /></button>
       ) : (
         <div className="grid size-full place-items-center text-zinc-400" title={failed ? 'Nie udało się pobrać zdjęcia' : 'Pobieranie zdjęcia…'}>
           {failed ? <ImageOff className="size-4" /> : <Loader2 className="size-4 animate-spin" />}
@@ -61,7 +63,9 @@ function PhotoTile({ photo, cached, failed, onRemove }: { photo: ShownPhoto; cac
 }
 
 export function PhotoGallery({ personId, property, addLabel }: PhotoGalleryProps) {
-  const { queue, cache, listing } = usePhotosContext();
+  const { queue, cache, listing, openFull } = usePhotosContext();
+  const [viewing, setViewing] = useState<ShownPhoto | null>(null);
+  const loadViewing = useMemo(() => (!viewing ? null : viewing.full ? () => Promise.resolve(URL.createObjectURL(viewing.full!)) : () => openFull(personId, viewing.key!)), [viewing, openFull, personId]);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<ShownPhoto | null>(null);
@@ -71,7 +75,7 @@ export function PhotoGallery({ personId, property, addLabel }: PhotoGalleryProps
   const shown = useMemo<ShownPhoto[]>(() => {
     const removed = new Set(ops.flatMap((op) => (op.kind === 'remove' ? [op.fileKey] : [])));
     const stored = (listing[personId]?.[property] ?? []).filter((photo) => !removed.has(photo.key)).map((photo) => ({ id: photo.key, key: photo.key, name: photo.name }));
-    const pending = ops.flatMap((op) => (op.kind === 'add' ? [{ id: op.id, pendingId: op.id, name: op.filename, blob: op.blob }] : []));
+    const pending = ops.flatMap((op) => (op.kind === 'add' ? [{ id: op.id, pendingId: op.id, name: op.filename, blob: op.thumb ?? op.blob, full: op.blob }] : []));
     return [...stored, ...pending];
   }, [ops, listing, personId, property]);
 
@@ -85,7 +89,7 @@ export function PhotoGallery({ personId, property, addLabel }: PhotoGalleryProps
     <div className="space-y-2">
       {shown.length > 0 && (
         <ul className="grid grid-cols-3 gap-2">
-          {shown.map((photo) => <PhotoTile key={photo.id} photo={photo} cached={photo.key ? cache.cached.has(photo.key) : false} failed={!cache.syncing} onRemove={addLabel ? () => setRemoving(photo) : undefined} />)}
+          {shown.map((photo) => <PhotoTile key={photo.id} photo={photo} cached={photo.key ? cache.cached.has(photo.key) : false} failed={!cache.syncing} onOpen={() => setViewing(photo)} onRemove={addLabel ? () => setRemoving(photo) : undefined} />)}
         </ul>
       )}
       {addLabel && <button type="button" onClick={() => inputRef.current?.click()} disabled={adding} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
@@ -95,6 +99,7 @@ export function PhotoGallery({ personId, property, addLabel }: PhotoGalleryProps
       <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void add(file); }} />
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       {queue.error && <p className="text-xs text-red-600 dark:text-red-400">{queue.error}</p>}
+      {viewing && loadViewing && <PhotoViewer name={viewing.name} load={loadViewing} onClose={() => setViewing(null)} />}
       {removing && (
         <ConfirmDialog title="Usunąć zdjęcie?" confirmLabel="Usuń" danger onConfirm={() => { const photo = removing; setRemoving(null); void queue.remove(personId, property, { pendingId: photo.pendingId, url: photo.key ?? '', name: photo.name }); }} onCancel={() => setRemoving(null)}>
           {removing.pendingId ? null : 'Zdjęcie zniknie z Notion po użyciu „Zapisz zmiany”.'}

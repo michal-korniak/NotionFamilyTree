@@ -56,6 +56,8 @@ export interface StoredPhoto {
   // The file's URL without its expiring signature; stable for as long as the file stays in Notion.
   key: string;
   name: string;
+  // The matching file in the thumbnail column ("min_" + name), when there is one.
+  thumbKey?: string;
 }
 
 export function unionKey(a: string, b: string): string {

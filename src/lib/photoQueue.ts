@@ -1,22 +1,25 @@
 // Photos live in IndexedDB rather than with the tree in localStorage: localStorage holds a few megabytes, which even compressed photos
 // would use up after a handful of pictures. Two stores share the database: "ops" holds photo changes waiting for "Zapisz zmiany",
-// "cache" holds a local copy of every photo in Notion, so the tree shows them without going to the network.
+// "thumbs" holds a small thumbnail of every photo in Notion, keyed by the photo's own key, so galleries show without going to the network;
+// the full photo is fetched from Notion only when opened.
 
 export type PhotoOp =
-  | { id: string; kind: 'add'; personId: string; property: string; blob: Blob; filename: string }
+  | { id: string; kind: 'add'; personId: string; property: string; blob: Blob; filename: string; thumb?: Blob }
   | { id: string; kind: 'remove'; personId: string; property: string; fileKey: string; name: string };
 
 const DB_NAME = 'nft-photos';
 const OPS = 'ops';
-const CACHE = 'cache';
+// Version 2 kept full photos in a "cache" store; version 3 replaces it with thumbnails.
+const THUMBS = 'thumbs';
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 2);
+    const request = indexedDB.open(DB_NAME, 3);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(OPS)) db.createObjectStore(OPS, { keyPath: 'id' });
-      if (!db.objectStoreNames.contains(CACHE)) db.createObjectStore(CACHE, { keyPath: 'key' });
+      if (db.objectStoreNames.contains('cache')) db.deleteObjectStore('cache');
+      if (!db.objectStoreNames.contains(THUMBS)) db.createObjectStore(THUMBS, { keyPath: 'key' });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -45,11 +48,11 @@ export const photoQueue = {
 };
 
 export const photoCache = {
-  get: async (key: string) => (await withStore<{ key: string; blob: Blob } | undefined>(CACHE, 'readonly', (store) => store.get(key) as IDBRequest<{ key: string; blob: Blob } | undefined>))?.blob,
-  put: (key: string, blob: Blob) => withStore(CACHE, 'readwrite', (store) => store.put({ key, blob })),
-  keys: () => withStore<IDBValidKey[]>(CACHE, 'readonly', (store) => store.getAllKeys()).then((keys) => keys.map(String)),
-  delete: (key: string) => withStore(CACHE, 'readwrite', (store) => store.delete(key)),
-  clear: () => withStore(CACHE, 'readwrite', (store) => store.clear()),
+  get: async (key: string) => (await withStore<{ key: string; blob: Blob } | undefined>(THUMBS, 'readonly', (store) => store.get(key) as IDBRequest<{ key: string; blob: Blob } | undefined>))?.blob,
+  put: (key: string, blob: Blob) => withStore(THUMBS, 'readwrite', (store) => store.put({ key, blob })),
+  keys: () => withStore<IDBValidKey[]>(THUMBS, 'readonly', (store) => store.getAllKeys()).then((keys) => keys.map(String)),
+  delete: (key: string) => withStore(THUMBS, 'readwrite', (store) => store.delete(key)),
+  clear: () => withStore(THUMBS, 'readwrite', (store) => store.clear()),
 };
 
 export function newPhotoOpId(): string {

@@ -1,6 +1,6 @@
 import { unionKey, type NotionLink, type PeopleById, type Person, type UnionDetails } from '../../types/person';
 import { NotionClient } from './notionClient';
-import { applyPhotoChanges } from './notionPhotos';
+import { applyPhotoChanges, makeThumbnail, type PhotoAdd } from './notionPhotos';
 import type { PhotoOp } from '../photoQueue';
 import { DETAIL_FIELDS, detailProperties, externalIdProperty, parentProperties, unionDetailProperties, unionProperties, unionTitleProperty, type DetailField } from './notionMapping';
 
@@ -218,7 +218,8 @@ export async function pushToNotion(token: string, link: NotionLink, current: Peo
     }
 
     for (const { personId, property, ops } of photoChangeGroups) {
-      const adds = ops.flatMap((op) => (op.kind === 'add' ? [{ blob: op.blob, filename: op.filename }] : []));
+      const adds: PhotoAdd[] = [];
+      for (const op of ops) if (op.kind === 'add') adds.push({ blob: op.blob, thumb: op.thumb ?? await makeThumbnail(op.blob), filename: op.filename });
       const removeKeys = ops.flatMap((op) => (op.kind === 'remove' ? [op.fileKey] : []));
       const listing = await applyPhotoChanges(client, pageIds[personId]!, property, adds, removeKeys);
       photos[personId] = { ...photos[personId], [property]: listing };

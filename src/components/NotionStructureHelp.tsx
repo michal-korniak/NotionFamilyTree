@@ -1,4 +1,5 @@
 import { PEOPLE, UNIONS } from '../lib/notion/notionMapping';
+import { thumbnailColumn } from '../lib/notion/notionPhotos';
 
 type Column = [name: string, type: string, note?: string];
 
@@ -16,6 +17,8 @@ const peopleColumns: Column[] = [
   [PEOPLE.burialInfo, 'Tekst'],
   [PEOPLE.photos, 'Pliki i multimedia', 'zdjęcia osoby'],
   [PEOPLE.gravePhotos, 'Pliki i multimedia', 'zdjęcia nagrobka'],
+  [thumbnailColumn(PEOPLE.photos), 'Pliki i multimedia', 'miniatury zdjęć, dodawane przez aplikację'],
+  [thumbnailColumn(PEOPLE.gravePhotos), 'Pliki i multimedia', 'miniatury zdjęć nagrobka, dodawane przez aplikację'],
   [PEOPLE.notes, 'Tekst'],
   [PEOPLE.father, 'Relacja z bazą Osoby', 'kolumna wymagana; relacja dwustronna'],
   [PEOPLE.mother, 'Relacja z bazą Osoby', 'kolumna wymagana; relacja dwustronna'],
