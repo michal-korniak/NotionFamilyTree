@@ -71,6 +71,10 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
             {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </IconButton>
         </div>
+        <div className="flex h-8 items-stretch rounded-md border border-zinc-200 sm:hidden dark:border-zinc-800">
+          <button type="button" onClick={onUndo} disabled={!canUndo} aria-label="Cofnij" title="Cofnij" className="grid w-8 place-items-center rounded-l-md border-r border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:text-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 dark:hover:text-zinc-100 dark:disabled:text-zinc-700"><Undo2 className="size-3.5" /></button>
+          <button type="button" onClick={onRedo} disabled={!canRedo} aria-label="Ponów" title="Ponów" className="grid w-8 place-items-center rounded-r-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-100 dark:disabled:text-zinc-700"><Redo2 className="size-3.5" /></button>
+        </div>
         {notionPending !== undefined && (
           <div className="flex h-8 items-stretch rounded-md border border-zinc-200 dark:border-zinc-800">
             <button type="button" onClick={onRefresh} disabled={refreshing} aria-label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} title={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} className="grid w-8 place-items-center rounded-l-md border-r border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-default dark:border-zinc-800 dark:hover:bg-zinc-900 dark:hover:text-zinc-100">
@@ -88,8 +92,6 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           { label: 'Dodaj osobę', icon: <UserPlus className="size-3.5" />, onSelect: onAddPerson },
           { label: 'Zarządzaj grobami', icon: <Church className="size-3.5" />, onSelect: onShowCemeteries },
           'separator',
-          { label: 'Cofnij', icon: <Undo2 className="size-3.5" />, disabled: !canUndo, onSelect: onUndo },
-          { label: 'Ponów', icon: <Redo2 className="size-3.5" />, disabled: !canRedo, onSelect: onRedo },
           { label: 'Zamknij wszystkie karty', icon: <X className="size-3.5" />, disabled: !onCloseAllTabs, onSelect: () => onCloseAllTabs?.() },
         ]} themeItem={{ label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme }} onChangeMe={onChangeMe} onShowCemeteries={onShowCemeteries} onExportGedcom={onExportGedcom} onClose={onReset} />
       </div>
