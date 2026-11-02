@@ -1,9 +1,10 @@
-import { unionKey, type Gender, type NotionLink, type Person, type StoredPhoto, type UnionDetails, type UnionRecord } from '../../types/person';
+import { unionKey, type Gender, type GraveDetails, type GraveRecord, type NotionLink, type Person, type StoredPhoto, type UnionDetails, type UnionRecord } from '../../types/person';
 import { NotionClient, NotionError, type NotionPage, type NotionPropertyValue } from './notionClient';
 import { readPhotoColumns } from './notionPhotos';
 
-// Property names of the "Drzewo" workspace (a MyHeritage import): an "Osoby" database of people and a "Związki" database of couples.
-// Ojciec/Matka are two-way relations mirrored by the two "Dzieci" properties, and Osoby.Związki mirrors Związki.Partnerzy, so only one side of each pair is ever written.
+// Property names of the "Drzewo" workspace (a MyHeritage import): an "Osoby" database of people, a "Związki" database of couples and a "Groby" database of graves.
+// Ojciec/Matka are two-way relations mirrored by the two "Dzieci" properties, Osoby.Związki mirrors Związki.Partnerzy and Osoby.Grób mirrors
+// Groby.Pochowani, so only one side of each pair is ever written.
 export const PEOPLE = {
   name: 'Imię i nazwisko',
   gender: 'Płeć',
@@ -11,9 +12,7 @@ export const PEOPLE = {
   birthPlace: 'Miejsce urodzenia',
   deathDate: 'Data śmierci',
   deathPlace: 'Miejsce śmierci',
-  cemetery: 'Cmentarz',
-  burialInfo: 'Informacje o pochówku',
-  gravePhotos: 'Zdjęcie nagrobka',
+  grave: 'Grób',
   photos: 'Zdjęcie',
   notes: 'Notatki',
   father: 'Ojciec',
@@ -37,10 +36,27 @@ export const UNIONS = {
   notes: 'Notatki',
 } as const;
 
-// Bump when the import starts reading another column, so the next refresh reads every page again instead of only the edited ones.
-export const NOTION_FIELDS_VERSION = 5;
+export const GRAVES = {
+  title: 'Nazwa',
+  cemetery: 'Cmentarz',
+  info: 'Informacje',
+  photos: 'Zdjęcie nagrobka',
+  buried: 'Pochowani',
+} as const;
 
-export const PHOTO_PROPERTIES = [PEOPLE.photos, PEOPLE.gravePhotos] as const;
+// Bump when the import starts reading another column, so the next refresh reads every page again instead of only the edited ones.
+export const NOTION_FIELDS_VERSION = 6;
+
+export const PHOTO_PROPERTIES = [PEOPLE.photos] as const;
+export const GRAVE_PHOTO_PROPERTIES = [GRAVES.photos] as const;
+
+// The page and photo columns behind a photo owner: a person, or a grave (whose ids never clash with person ids).
+export function photoOwnerPage(link: NotionLink, ownerId: string): { pageId: string; properties: readonly string[] } | undefined {
+  const personPage = link.pageIds[ownerId];
+  if (personPage) return { pageId: personPage, properties: PHOTO_PROPERTIES };
+  const gravePage = link.graves?.[ownerId]?.pageId;
+  return gravePage ? { pageId: gravePage, properties: GRAVE_PHOTO_PROPERTIES } : undefined;
+}
 
 const PEOPLE_DATABASE_NAME = 'Osoby';
 const REQUIRED_PEOPLE_PROPS = [PEOPLE.name, PEOPLE.father, PEOPLE.mother, PEOPLE.unions];
@@ -56,8 +72,7 @@ export interface FamilyRecord {
   birthPlace?: string;
   deathDate?: string;
   deathPlace?: string;
-  cemetery?: string;
-  burialInfo?: string;
+  graveId?: string;
   parents: string[];
   children: string[];
   spouses: string[];
@@ -95,6 +110,7 @@ interface Databases {
   databaseId: string;
   dataSourceId: string;
   unionsDataSourceId: string;
+  gravesDataSourceId?: string;
   title: string;
 }
 
@@ -117,7 +133,8 @@ async function locateDatabases(client: NotionClient, id: string): Promise<Databa
   if (missing.length) throw new Error(`To nie wygląda na bazę Osoby: brakuje ${missing.map((m) => `„${m}”`).join(', ')}.`);
   const unionsDataSourceId = schema[PEOPLE.unions]?.relation?.data_source_id;
   if (!unionsDataSourceId) throw new Error(`„${PEOPLE.unions}” w bazie Osoby musi być relacją do bazy Związki.`);
-  return { databaseId, dataSourceId: database.dataSourceId, unionsDataSourceId, title: database.title };
+  const gravesDataSourceId = schema[PEOPLE.grave]?.relation?.data_source_id;
+  return { databaseId, dataSourceId: database.dataSourceId, unionsDataSourceId, ...(gravesDataSourceId ? { gravesDataSourceId } : {}), title: database.title };
 }
 
 // The ID property (e.g. "K-I500099") becomes the person id when present and unique, so the stored JSON stays readable and matches MyHeritage; otherwise the Notion page id is used.
@@ -135,10 +152,17 @@ export async function importNotionDatabase(token: string, inputId: string, onPro
   const peoplePages = await client.queryAllPages(databases.dataSourceId, (loaded) => onProgress?.(`Wczytano osób: ${loaded}…`));
   onProgress?.('Wczytywanie związków…');
   const unionPages = await client.queryAllPages(databases.unionsDataSourceId, (loaded) => onProgress?.(`Wczytano związków: ${loaded}…`));
+  const gravePages = databases.gravesDataSourceId ? await client.queryAllPages(databases.gravesDataSourceId, (loaded) => onProgress?.(`Wczytano grobów: ${loaded}…`)) : [];
 
   const idByPage = personIds(peoplePages);
   const toIds = (pageIds: string[]) => [...new Set(pageIds.map((id) => idByPage.get(id)).filter((id): id is string => Boolean(id)))];
-  const link: Omit<NotionLink, 'baseline'> = { ...databases, pageIds: {}, externalIds: {}, unions: {}, syncedAt: new Date().toISOString(), fieldsVersion: NOTION_FIELDS_VERSION, photos: {} };
+  const link: Omit<NotionLink, 'baseline'> = { ...databases, pageIds: {}, externalIds: {}, unions: {}, graves: {}, syncedAt: new Date().toISOString(), fieldsVersion: NOTION_FIELDS_VERSION, photos: {} };
+  for (const page of gravePages) {
+    link.graves![page.id] = graveRecord(page);
+    const photos = readPhotoColumns(page, GRAVE_PHOTO_PROPERTIES);
+    if (Object.keys(photos).length) link.photos![page.id] = photos;
+  }
+  const toGraveId: ToGraveId = (pageId) => (pageId && link.graves![pageId] ? pageId : undefined);
   for (const page of peoplePages) {
     const personId = idByPage.get(page.id)!;
     link.pageIds[personId] = page.id;
@@ -153,14 +177,20 @@ export async function importNotionDatabase(token: string, inputId: string, onPro
   const records: FamilyRecord[] = [];
   for (const page of peoplePages) {
     const personId = idByPage.get(page.id)!;
-    records.push({ ...await personRecord(client, page, personId, toIds), spouses: [...(spouses.get(personId) ?? [])] });
+    records.push({ ...await personRecord(client, page, personId, toIds, toGraveId), spouses: [...(spouses.get(personId) ?? [])] });
   }
   return { records, warnings: unionWarnings(unionCounts), link };
 }
 
 type ToPersonIds = (pageIds: string[]) => string[];
+type ToGraveId = (pageId: string | undefined) => string | undefined;
 
-async function personRecord(client: NotionClient, page: NotionPage, personId: string, toIds: ToPersonIds): Promise<FamilyRecord> {
+function graveRecord(page: NotionPage): GraveRecord {
+  const p = page.properties;
+  return { pageId: page.id, name: text(p[GRAVES.title]), cemetery: text(p[GRAVES.cemetery]), info: text(p[GRAVES.info]) };
+}
+
+async function personRecord(client: NotionClient, page: NotionPage, personId: string, toIds: ToPersonIds, toGraveId: ToGraveId): Promise<FamilyRecord> {
   const p = page.properties;
   return {
     id: personId,
@@ -170,8 +200,7 @@ async function personRecord(client: NotionClient, page: NotionPage, personId: st
     birthPlace: text(p[PEOPLE.birthPlace]),
     deathDate: text(p[PEOPLE.deathDate]),
     deathPlace: text(p[PEOPLE.deathPlace]),
-    cemetery: text(p[PEOPLE.cemetery]),
-    burialInfo: text(p[PEOPLE.burialInfo]),
+    graveId: toGraveId((await relationIds(client, page, PEOPLE.grave))[0]),
     parents: toIds([...await relationIds(client, page, PEOPLE.father), ...await relationIds(client, page, PEOPLE.mother)]),
     children: toIds([...await relationIds(client, page, PEOPLE.childrenA), ...await relationIds(client, page, PEOPLE.childrenB)]),
     spouses: [],
@@ -217,11 +246,13 @@ function unionWarnings({ skipped, duplicates }: { skipped: number; duplicates: n
 const EDIT_TIME_MARGIN_MS = 2 * 60_000;
 
 export interface NotionRefresh extends NotionImport {
-  // What differs from the last sync: people and couples (by union key) edited, added or removed in Notion, and people whose photos changed.
+  // What differs from the last sync: people, couples (by union key) and graves edited, added or removed in Notion, and photo columns that changed.
   changedPersonIds: string[];
   removedPersonIds: string[];
   changedUnionKeys: string[];
   removedUnionKeys: string[];
+  changedGraveIds: string[];
+  removedGraveIds: string[];
   changedPhotos: number;
 }
 
@@ -229,11 +260,13 @@ export interface NotionRefresh extends NotionImport {
 // listing of each database to notice deleted pages. A changed page is authoritative for every parent/child link it takes part in, because
 // Notion keeps the two sides of Ojciec/Matka and Dzieci in sync even when only one of the two pages gets a new last_edited_time.
 export async function refreshNotionDatabase(token: string, link: NotionLink, onProgress?: (message: string) => void): Promise<NotionRefresh> {
-  if (link.fieldsVersion !== NOTION_FIELDS_VERSION) {
-    const full = await importNotionDatabase(token, link.databaseId, onProgress);
-    return { ...full, changedPersonIds: full.records.map((record) => record.id), removedPersonIds: [], changedUnionKeys: Object.keys(full.link.unions), removedUnionKeys: [], changedPhotos: 0 };
-  }
   const client = new NotionClient(token);
+  // Groby can be added, or shared with the integration, after the tree was imported; it then needs the full read that finds it.
+  const gravesAppeared = !link.gravesDataSourceId && Boolean((await client.retrieveDataSourceSchema(link.dataSourceId))[PEOPLE.grave]?.relation?.data_source_id);
+  if (link.fieldsVersion !== NOTION_FIELDS_VERSION || gravesAppeared) {
+    const full = await importNotionDatabase(token, link.databaseId, onProgress);
+    return { ...full, changedPersonIds: full.records.map((record) => record.id), removedPersonIds: [], changedUnionKeys: Object.keys(full.link.unions), removedUnionKeys: [], changedGraveIds: Object.keys(full.link.graves ?? {}), removedGraveIds: [], changedPhotos: 0 };
+  }
   const startedAt = new Date().toISOString();
   const editedSince = { timestamp: 'last_edited_time', last_edited_time: { on_or_after: new Date(Date.parse(link.syncedAt) - EDIT_TIME_MARGIN_MS).toISOString() } };
   onProgress?.('Sprawdzanie zmian w Notion…');
@@ -241,6 +274,27 @@ export async function refreshNotionDatabase(token: string, link: NotionLink, onP
   const changedUnionPages = await client.queryAllPages(link.unionsDataSourceId, undefined, { filter: editedSince });
   const livePeoplePages = new Set([...(await client.queryAllPages(link.dataSourceId, undefined, { onlyProperties: ['title'] })).map((p) => p.id), ...changedPeoplePages.map((p) => p.id)]);
   const liveUnionPages = new Set([...(await client.queryAllPages(link.unionsDataSourceId, undefined, { onlyProperties: ['title'] })).map((p) => p.id), ...changedUnionPages.map((p) => p.id)]);
+  const changedGravePages = link.gravesDataSourceId ? await client.queryAllPages(link.gravesDataSourceId, undefined, { filter: editedSince }) : [];
+  const liveGravePages = new Set(link.gravesDataSourceId ? [...(await client.queryAllPages(link.gravesDataSourceId, undefined, { onlyProperties: ['title'] })).map((p) => p.id), ...changedGravePages.map((p) => p.id)] : []);
+
+  // Graves made in the app keep the id they were given; graves new to this device take their page id, as in a full import.
+  const graves: Record<string, GraveRecord> = {};
+  const removedGraveIds: string[] = [];
+  const graveIdByPage = new Map<string, string>();
+  for (const [graveId, grave] of Object.entries(link.graves ?? {})) {
+    if (!liveGravePages.has(grave.pageId)) { removedGraveIds.push(graveId); continue; }
+    graves[graveId] = grave;
+    graveIdByPage.set(grave.pageId, graveId);
+  }
+  const changedGraveIds: string[] = [];
+  for (const page of changedGravePages) {
+    const graveId = graveIdByPage.get(page.id) ?? page.id;
+    graveIdByPage.set(page.id, graveId);
+    const record = graveRecord(page);
+    if (!sameGrave(record, graves[graveId])) changedGraveIds.push(graveId);
+    graves[graveId] = record;
+  }
+  const toGraveId: ToGraveId = (pageId) => (pageId ? graveIdByPage.get(pageId) : undefined);
 
   const pageIds: Record<string, string> = {};
   const externalIds: Record<string, string> = {};
@@ -265,17 +319,20 @@ export async function refreshNotionDatabase(token: string, link: NotionLink, onP
   }
   const toIds: ToPersonIds = (ids) => [...new Set(ids.map((id) => idByPage.get(id)).filter((id): id is string => Boolean(id)))];
 
-  const photos: Record<string, Record<string, StoredPhoto[]>> = Object.fromEntries(Object.entries(link.photos ?? {}).filter(([personId]) => !removedIds.has(personId)));
+  const photos: Record<string, Record<string, StoredPhoto[]>> = Object.fromEntries(Object.entries(link.photos ?? {}).filter(([ownerId]) => !removedIds.has(ownerId) && !removedGraveIds.includes(ownerId)));
   let changedPhotos = 0;
+  const notePhotos = (ownerId: string, pagePhotos: Record<string, StoredPhoto[]>) => {
+    if (JSON.stringify(pagePhotos) !== JSON.stringify(photos[ownerId] ?? {})) changedPhotos++;
+    if (Object.keys(pagePhotos).length) photos[ownerId] = pagePhotos; else delete photos[ownerId];
+  };
+  for (const page of changedGravePages) notePhotos(graveIdByPage.get(page.id)!, readPhotoColumns(page, GRAVE_PHOTO_PROPERTIES));
   const changedRecords = new Map<string, FamilyRecord>();
   for (const page of changedPeoplePages) {
     const personId = idByPage.get(page.id)!;
-    changedRecords.set(personId, await personRecord(client, page, personId, toIds));
+    changedRecords.set(personId, await personRecord(client, page, personId, toIds, toGraveId));
     const externalId = text(page.properties[PEOPLE.externalId]);
     if (externalId) externalIds[personId] = externalId; else delete externalIds[personId];
-    const pagePhotos = readPhotoColumns(page, PHOTO_PROPERTIES);
-    if (JSON.stringify(pagePhotos) !== JSON.stringify(photos[personId] ?? {})) changedPhotos++;
-    if (Object.keys(pagePhotos).length) photos[personId] = pagePhotos; else delete photos[personId];
+    notePhotos(personId, readPhotoColumns(page, PHOTO_PROPERTIES));
   }
 
   const changedUnionPageIds = new Set(changedUnionPages.map((page) => page.id));
@@ -293,7 +350,7 @@ export async function refreshNotionDatabase(token: string, link: NotionLink, onP
   const records: FamilyRecord[] = [];
   for (const base of link.baseline) {
     if (removedIds.has(base.id) || changedRecords.has(base.id) || !pageIds[base.id]) continue;
-    records.push({ ...base, gender: base.gender === 'U' ? undefined : base.gender, givenNames: base.givenNames ?? '', birthSurname: base.birthSurname ?? '', marriedSurname: base.marriedSurname ?? '', parents: unlinkChanged(base.parents), children: unlinkChanged(base.children), spouses: [...(spouses.get(base.id) ?? [])] });
+    records.push({ ...base, graveId: base.graveId && graves[base.graveId] ? base.graveId : undefined, gender: base.gender === 'U' ? undefined : base.gender, givenNames: base.givenNames ?? '', birthSurname: base.birthSurname ?? '', marriedSurname: base.marriedSurname ?? '', parents: unlinkChanged(base.parents), children: unlinkChanged(base.children), spouses: [...(spouses.get(base.id) ?? [])] });
   }
   for (const record of changedRecords.values()) records.push({ ...record, spouses: [...(spouses.get(record.id) ?? [])] });
 
@@ -303,9 +360,11 @@ export async function refreshNotionDatabase(token: string, link: NotionLink, onP
   return {
     records,
     warnings: unionWarnings(unionCounts),
-    link: { databaseId: link.databaseId, dataSourceId: link.dataSourceId, unionsDataSourceId: link.unionsDataSourceId, title: link.title, pageIds, externalIds, unions, syncedAt: startedAt, fieldsVersion: NOTION_FIELDS_VERSION, photos },
+    link: { databaseId: link.databaseId, dataSourceId: link.dataSourceId, unionsDataSourceId: link.unionsDataSourceId, ...(link.gravesDataSourceId ? { gravesDataSourceId: link.gravesDataSourceId } : {}), title: link.title, pageIds, externalIds, unions, graves, syncedAt: startedAt, fieldsVersion: NOTION_FIELDS_VERSION, photos },
     changedPersonIds,
     changedUnionKeys,
+    changedGraveIds,
+    removedGraveIds,
     changedPhotos,
     removedPersonIds: [...removedIds],
     removedUnionKeys,
@@ -316,7 +375,11 @@ const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((
 
 function sameRecord(record: FamilyRecord, base: Person): boolean {
   const sameDetails = DETAIL_FIELDS.every((field) => (field === 'gender' ? (record.gender ?? 'U') === base.gender : (record[field] ?? '') === (base[field] ?? '')));
-  return sameDetails && sameSet(record.parents, base.parents) && sameSet(record.children, base.children);
+  return sameDetails && (record.graveId ?? '') === (base.graveId ?? '') && sameSet(record.parents, base.parents) && sameSet(record.children, base.children);
+}
+
+function sameGrave(a: GraveRecord, b: GraveRecord | undefined): boolean {
+  return Boolean(b) && a.pageId === b!.pageId && a.name === b!.name && a.cemetery === b!.cemetery && a.info === b!.info;
 }
 
 function sameUnion(a: UnionRecord, b: UnionRecord | undefined): boolean {
@@ -332,7 +395,7 @@ function richText(value: string | undefined) {
   return chunks;
 }
 
-export const DETAIL_FIELDS = ['name', 'givenNames', 'birthSurname', 'marriedSurname', 'gender', 'birthDate', 'deathDate', 'birthPlace', 'deathPlace', 'cemetery', 'burialInfo', 'biography'] as const;
+export const DETAIL_FIELDS = ['name', 'givenNames', 'birthSurname', 'marriedSurname', 'gender', 'birthDate', 'deathDate', 'birthPlace', 'deathPlace', 'biography'] as const;
 
 export type DetailField = (typeof DETAIL_FIELDS)[number];
 
@@ -346,8 +409,6 @@ export function detailProperties(person: Person, fields: readonly DetailField[] 
     birthPlace: [PEOPLE.birthPlace, { rich_text: richText(person.birthPlace) }],
     deathDate: [PEOPLE.deathDate, { rich_text: richText(person.deathDate) }],
     deathPlace: [PEOPLE.deathPlace, { rich_text: richText(person.deathPlace) }],
-    cemetery: [PEOPLE.cemetery, { rich_text: richText(person.cemetery) }],
-    burialInfo: [PEOPLE.burialInfo, { rich_text: richText(person.burialInfo) }],
     biography: [PEOPLE.notes, { rich_text: richText(person.biography) }],
     givenNames: [PEOPLE.givenNames, { rich_text: richText(person.givenNames) }],
     birthSurname: [PEOPLE.birthSurname, { rich_text: richText(person.birthSurname) }],
@@ -368,6 +429,22 @@ export function parentProperties(parents: { pageId: string; gender: Gender }[]):
   }
   for (const id of unknown) (father.length ? mother : father).push(id);
   return { [PEOPLE.father]: { relation: father.map((id) => ({ id })) }, [PEOPLE.mother]: { relation: mother.map((id) => ({ id })) } };
+}
+
+export function graveProperty(gravePageId: string | undefined): Record<string, unknown> {
+  return { [PEOPLE.grave]: { relation: gravePageId ? [{ id: gravePageId }] : [] } };
+}
+
+export function graveProperties(details: GraveDetails, title: string): Record<string, unknown> {
+  return {
+    [GRAVES.title]: { title: richText(title) },
+    [GRAVES.cemetery]: { rich_text: richText(details.cemetery) },
+    [GRAVES.info]: { rich_text: richText(details.info) },
+  };
+}
+
+export function graveTitleProperty(title: string): Record<string, unknown> {
+  return { [GRAVES.title]: { title: richText(title) } };
 }
 
 export function externalIdProperty(externalId: string): Record<string, unknown> {

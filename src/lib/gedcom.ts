@@ -1,4 +1,4 @@
-import { unionKey, type PeopleById, type Person, type UnionDetails } from '../types/person';
+import { unionKey, type GraveDetails, type PeopleById, type Person, type UnionDetails } from '../types/person';
 import { isDeceased } from './dates';
 
 // GEDCOM 5.5.1 (the version MyHeritage, Ancestry, FamilySearch and Gramps all read). Photos are left out: Notion's file links expire
@@ -112,7 +112,7 @@ function families(people: PeopleById, unions: Record<string, UnionDetails & { en
   return [...byKey.values()];
 }
 
-export function toGedcom(people: PeopleById, unions: Record<string, UnionDetails & { ending?: string }>, now: Date = new Date()): string {
+export function toGedcom(people: PeopleById, unions: Record<string, UnionDetails & { ending?: string }>, graves: Record<string, GraveDetails> = {}, now: Date = new Date()): string {
   const personRef = new Map([...people.keys()].map((id, index) => [id, `@I${index + 1}@`]));
   const familyList = families(people, unions);
   const familyRef = (index: number) => `@F${index + 1}@`;
@@ -124,7 +124,8 @@ export function toGedcom(people: PeopleById, unions: Record<string, UnionDetails
     const death = event('DEAT', person.deathDate, person.deathPlace);
     // A person known to be dead without a death date or place still gets the event, which GEDCOM marks with "Y".
     lines.push(...(death.length ? death : isDeceased(person, now) ? ['1 DEAT Y'] : []));
-    lines.push(...event('BURI', undefined, person.cemetery, person.burialInfo?.trim() ? textLines(2, 'NOTE', person.burialInfo.trim()) : []));
+    const grave = person.graveId ? graves[person.graveId] : undefined;
+    lines.push(...event('BURI', undefined, grave?.cemetery, grave?.info?.trim() ? textLines(2, 'NOTE', grave.info.trim()) : []));
     if (person.biography?.trim()) lines.push(...textLines(1, 'NOTE', person.biography.trim()));
     familyList.forEach((family, index) => {
       if (family.partners.includes(person.id)) lines.push(`1 FAMS ${familyRef(index)}`);

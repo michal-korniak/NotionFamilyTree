@@ -1,29 +1,44 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
-import type { Gender, Person } from '../types/person';
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import type { Gender, GraveDetails, PeopleById, Person } from '../types/person';
 import type { PersonDetails } from '../lib/treeEdits';
 import { isValidDateText, parseYear } from '../lib/dates';
-import { composeName, nameParts } from '../lib/names';
-import { PEOPLE } from '../lib/notion/notionMapping';
+import { composeName, displayName, nameParts } from '../lib/names';
+import { GRAVES, PEOPLE } from '../lib/notion/notionMapping';
+import { buriedIn, cemeteryGroups, familyGraveIds, graveTitle, newGraveId } from '../lib/graves';
 import { PhotoGallery } from './PhotoGallery';
+import { CemeteryInput } from './CemeteryInput';
 
 interface PersonFormProps {
   person: Person;
   // A person being added must get a gender (Mężczyzna or Kobieta) before saving; existing records may stay "Nieznana".
   isNew?: boolean;
-  onSave: (details: PersonDetails) => void;
+  // The grave is saved with the person: it is shared, so its details change for everyone buried in it.
+  onSave: (details: PersonDetails, grave?: { id: string; details: GraveDetails }) => void;
   onCancel: () => void;
   // undefined: the tree is not linked to Notion, so there is nowhere to keep photos.
   notionPageId?: string | null;
+  people: PeopleById;
+  graves: Record<string, GraveDetails>;
+  // False for a Notion tree whose Osoby has no "Grób" relation yet.
+  gravesEnabled: boolean;
 }
 
-type FormValues = Record<'givenNames' | 'birthSurname' | 'marriedSurname' | 'birthDate' | 'deathDate' | 'birthPlace' | 'deathPlace' | 'cemetery' | 'burialInfo' | 'biography', string> & { gender: Gender | null };
+type FormValues = Record<'givenNames' | 'birthSurname' | 'marriedSurname' | 'birthDate' | 'deathDate' | 'birthPlace' | 'deathPlace' | 'biography', string> & { gender: Gender | null };
+
+type GraveValues = Record<keyof GraveDetails, string>;
+
+const NEW_GRAVE = '__new';
 
 type FormErrors = Partial<Record<keyof FormValues, string>>;
 
 const inputClass = 'w-full rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 aria-invalid:border-red-400 dark:border-zinc-800 dark:bg-zinc-900 dark:focus:border-zinc-600 dark:focus:ring-zinc-800';
 
 function toValues(person: Person, isNew: boolean): FormValues {
-  return { ...nameParts(person), gender: isNew && person.gender === 'U' ? null : person.gender, birthDate: person.birthDate ?? '', deathDate: person.deathDate ?? '', birthPlace: person.birthPlace ?? '', deathPlace: person.deathPlace ?? '', cemetery: person.cemetery ?? '', burialInfo: person.burialInfo ?? '', biography: person.biography ?? '' };
+  return { ...nameParts(person), gender: isNew && person.gender === 'U' ? null : person.gender, birthDate: person.birthDate ?? '', deathDate: person.deathDate ?? '', birthPlace: person.birthPlace ?? '', deathPlace: person.deathPlace ?? '', biography: person.biography ?? '' };
+}
+
+function toGraveValues(grave: GraveDetails | undefined): GraveValues {
+  return { name: grave?.name ?? '', cemetery: grave?.cemetery ?? '', info: grave?.info ?? '' };
 }
 
 function validate(values: FormValues): FormErrors {
@@ -63,19 +78,31 @@ function PhotoField({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-export function PersonForm({ person, isNew = false, onSave, onCancel, notionPageId }: PersonFormProps) {
+export function PersonForm({ person, isNew = false, onSave, onCancel, notionPageId, people, graves, gravesEnabled }: PersonFormProps) {
   const [values, setValues] = useState(() => toValues(person, isNew));
   const [errors, setErrors] = useState<FormErrors>({});
   const fullName = composeName(values);
+  const [graveId, setGraveId] = useState(person.graveId && graves[person.graveId] ? person.graveId : '');
+  const [graveValues, setGraveValues] = useState(() => toGraveValues(person.graveId ? graves[person.graveId] : undefined));
+  const isNewGrave = graveId !== '' && !graves[graveId];
+  const buriedWith = useMemo(() => (graveId ? buriedIn(people, graveId).filter((other) => other.id !== person.id) : []), [people, graveId, person.id]);
 
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) => setValues((v) => ({ ...v, [key]: value }));
+  const setGrave = (key: keyof GraveValues, value: string) => setGraveValues((v) => ({ ...v, [key]: value }));
+  const chooseGrave = (value: string) => {
+    const id = value === NEW_GRAVE ? newGraveId(graves) : value;
+    setGraveId(id);
+    setGraveValues(toGraveValues(graves[id]));
+  };
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
     const found = validate(values);
     setErrors(found);
     if (Object.keys(found).length) return;
-    onSave({ name: fullName, givenNames: values.givenNames.trim(), birthSurname: values.birthSurname.trim(), marriedSurname: values.marriedSurname.trim(), gender: values.gender ?? 'U', birthDate: optional(values.birthDate), deathDate: optional(values.deathDate), birthPlace: optional(values.birthPlace), deathPlace: optional(values.deathPlace), cemetery: optional(values.cemetery), burialInfo: optional(values.burialInfo), biography: optional(values.biography) });
+    const details: PersonDetails = { name: fullName, givenNames: values.givenNames.trim(), birthSurname: values.birthSurname.trim(), marriedSurname: values.marriedSurname.trim(), gender: values.gender ?? 'U', birthDate: optional(values.birthDate), deathDate: optional(values.deathDate), birthPlace: optional(values.birthPlace), deathPlace: optional(values.deathPlace), graveId: graveId || undefined, biography: optional(values.biography) };
+    const grave = graveId ? { id: graveId, details: { name: graveTitle(undefined, [...buriedWith, { ...person, ...details }]), cemetery: optional(graveValues.cemetery), info: optional(graveValues.info) } } : undefined;
+    onSave(details, grave);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -119,13 +146,7 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
           <input value={values.deathPlace} onChange={(e) => set('deathPlace', e.target.value)} className={inputClass} />
         </Field>
       </div>
-      <Field label="Cmentarz">
-        <input value={values.cemetery} onChange={(e) => set('cemetery', e.target.value)} className={inputClass} />
-      </Field>
-      <Field label="Informacje o pochówku">
-        <textarea value={values.burialInfo} onChange={(e) => set('burialInfo', e.target.value)} rows={3} className={`${inputClass} resize-y leading-relaxed`} />
-      </Field>
-      {notionPageId !== undefined && <PhotoField label="Zdjęcie nagrobka"><PhotoGallery personId={person.id} property={PEOPLE.gravePhotos} addLabel="Dodaj zdjęcie nagrobka" /></PhotoField>}
+      {gravesEnabled && <GraveField person={person} people={people} graves={graves} graveId={graveId} isNewGrave={isNewGrave} values={graveValues} buriedWith={buriedWith} withPhotos={notionPageId !== undefined} onChoose={chooseGrave} onChange={setGrave} />}
       <Field label="Biografia">
         <textarea value={values.biography} onChange={(e) => set('biography', e.target.value)} rows={6} className={`${inputClass} resize-y leading-relaxed`} />
       </Field>
@@ -134,5 +155,39 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
         <button type="submit" className="h-8 rounded-md bg-zinc-900 px-3 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300">Zapisz</button>
       </div>
     </form>
+  );
+}
+
+function GraveField({ person, people, graves, graveId, isNewGrave, values, buriedWith, withPhotos, onChoose, onChange }: { person: Person; people: PeopleById; graves: Record<string, GraveDetails>; graveId: string; isNewGrave: boolean; values: GraveValues; buriedWith: Person[]; withPhotos: boolean; onChoose: (value: string) => void; onChange: (key: keyof GraveValues, value: string) => void }) {
+  const familyGraves = useMemo(() => familyGraveIds(people, person).filter((id) => graves[id]), [people, person, graves]);
+  // Graves of the closest family come first, under their own cemetery, as people are most often buried with them.
+  const groups = useMemo(() => {
+    const isFamily = (id: string) => familyGraves.includes(id);
+    const sorted = cemeteryGroups(people, graves).map((group) => ({ ...group, graves: [...group.graves].sort((a, b) => Number(isFamily(b.id)) - Number(isFamily(a.id))) }));
+    return sorted.sort((a, b) => Number(b.graves.some(({ id }) => isFamily(id))) - Number(a.graves.some(({ id }) => isFamily(id))));
+  }, [people, graves, familyGraves]);
+  const label = (id: string, grave: GraveDetails) => graveTitle(grave, buriedIn(people, id));
+  return (
+    <fieldset className="space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+      <Field label="Grób">
+        <select value={isNewGrave ? NEW_GRAVE : graveId} onChange={(e) => onChoose(e.target.value)} className={inputClass}>
+          <option value="">— brak —</option>
+          {groups.map((group) => <optgroup key={group.cemetery} label={group.cemetery}>{group.graves.map(({ id, grave }) => <option key={id} value={id}>{label(id, grave)}</option>)}</optgroup>)}
+          <option value={NEW_GRAVE}>+ Nowy grób…</option>
+        </select>
+      </Field>
+      {graveId && (
+        <>
+          {buriedWith.length > 0 && <p className="-mt-1 text-xs text-zinc-500">Wspólny z: <span className="font-medium text-zinc-700 dark:text-zinc-300">{buriedWith.map(displayName).join(', ')}</span>. Zmiany poniżej dotyczą wszystkich pochowanych w tym grobie.</p>}
+          <Field label="Cmentarz">
+            <CemeteryInput value={values.cemetery} onChange={(value) => onChange('cemetery', value)} graves={graves} className={inputClass} />
+          </Field>
+          <Field label="Informacje">
+            <textarea value={values.info} onChange={(e) => onChange('info', e.target.value)} rows={3} className={`${inputClass} resize-y leading-relaxed`} />
+          </Field>
+          {withPhotos && <PhotoField label="Zdjęcie nagrobka"><PhotoGallery personId={graveId} property={GRAVES.photos} addLabel="Dodaj zdjęcie nagrobka" /></PhotoField>}
+        </>
+      )}
+    </fieldset>
   );
 }

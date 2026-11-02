@@ -27,11 +27,12 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { conflictingChanges, diffNotion, photoChanges, revertChange, type NotionChange, type NotionEdits } from './lib/notion/notionPush';
 import { PhotosContext, usePhotoQueue } from './hooks/usePhotoQueue';
 import { usePhotoCache } from './hooks/usePhotoCache';
-import { describeUnion, PHOTO_PROPERTIES, refreshNotionDatabase, type NotionImport, type NotionRefresh } from './lib/notion/notionMapping';
+import { describeUnion, photoOwnerPage, refreshNotionDatabase, type NotionImport, type NotionRefresh } from './lib/notion/notionMapping';
+import { CemeteriesDialog } from './components/CemeteriesDialog';
 import { fullPhotoUrl } from './lib/notion/notionPhotos';
 import { NotionClient } from './lib/notion/notionClient';
 import { toGedcom } from './lib/gedcom';
-import { unionKey, type Gender, type UnionDetails } from './types/person';
+import { unionKey, type Gender, type GraveDetails, type UnionDetails } from './types/person';
 
 const AUTO_REFRESH_MS = 5 * 60_000;
 const AUTO_REFRESH_CHECK_MS = 30_000;
@@ -64,7 +65,7 @@ function useUndoShortcuts(undo: () => void, redo: () => void) {
 }
 
 function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
-  const { tree, warnings, dirty, canUndo, canRedo, commit, undo, redo, reset, dismissWarnings, setNotionLink, updateUnion } = controller;
+  const { tree, warnings, dirty, canUndo, canRedo, commit, undo, redo, reset, dismissWarnings, setNotionLink, updateUnion, updateGrave } = controller;
   const { people } = tree;
   const { prefs: view, activeTab, setMe, activateTab, closeTab, closeTabs, openFamilyTab, navigateTo, openConnectionTab, changeDegree } = useViewPrefs();
   const meId = view.meId && people.has(view.meId) ? view.meId : null;
@@ -89,6 +90,9 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const [notionDialogOpen, setNotionDialogOpen] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [cemeteriesOpen, setCemeteriesOpen] = useState(false);
+  // A Notion tree needs the Groby database (found through Osoby.Grób) to keep graves; a tree from a file keeps them locally.
+  const gravesEnabled = !notionLink || Boolean(notionLink.gravesDataSourceId);
   const describeSpouseUnion = useCallback((personId: string, spouseId: string) => describeUnion({ ...tree.unions[unionKey(personId, spouseId)], ending: notionLink?.unions[unionKey(personId, spouseId)]?.ending }), [tree.unions, notionLink]);
   const unionAccess = useMemo(() => ({ get: (a: string, b: string) => tree.unions[unionKey(a, b)], save: (a: string, b: string, details: UnionDetails) => updateUnion(unionKey(a, b), details) }), [tree.unions, updateUnion]);
   const photos = usePhotoQueue();
@@ -96,12 +100,12 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const photoCacheState = usePhotoCache(tree.notion, recordThumbnails);
   const openFullPhoto = useCallback(async (personId: string, key: string) => {
     const token = notionSettings.token();
-    const pageId = tree.notion?.pageIds[personId];
-    if (!token || !pageId) throw new Error('Aby otworzyć zdjęcie, potrzebny jest token Notion.');
-    return fullPhotoUrl(new NotionClient(token), pageId, key, PHOTO_PROPERTIES);
+    const owner = tree.notion && photoOwnerPage(tree.notion, personId);
+    if (!token || !owner) throw new Error('Aby otworzyć zdjęcie, potrzebny jest token Notion.');
+    return fullPhotoUrl(new NotionClient(token), owner.pageId, key, owner.properties);
   }, [tree.notion]);
   const photosContext = useMemo(() => ({ queue: photos, cache: photoCacheState, listing: tree.notion?.photos ?? {}, openFull: openFullPhoto }), [photos, photoCacheState, tree.notion?.photos, openFullPhoto]);
-  const notionPending = useMemo(() => (tree.notion ? diffNotion(tree.notion, people, tree.unions).length + photoChanges(photos.ops, people).length : undefined), [tree.notion, people, tree.unions, photos.ops]);
+  const notionPending = useMemo(() => (tree.notion ? diffNotion(tree.notion, people, tree.unions, tree.graves).length + photoChanges(photos.ops, people, tree.graves).length : undefined), [tree.notion, people, tree.unions, tree.graves, photos.ops]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -109,7 +113,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   // in place, keeping the open tab and person.
   const applyRefresh = useCallback((result: NotionRefresh, { warnings: extraWarnings = [], discardLocal = false }: { warnings?: string[]; discardLocal?: boolean } = {}): string | null => {
     if (!tree.notion) return null;
-    const changed = result.changedPersonIds.length || result.removedPersonIds.length || result.changedUnionKeys.length || result.removedUnionKeys.length || result.changedPhotos;
+    const changed = result.changedPersonIds.length || result.removedPersonIds.length || result.changedUnionKeys.length || result.removedUnionKeys.length || result.changedGraveIds.length || result.removedGraveIds.length || result.changedPhotos;
     if (!changed && !extraWarnings.length && !discardLocal) { controller.setNotionLink({ ...tree.notion, syncedAt: result.link.syncedAt }); return null; }
     setNotionEdits(null);
     return controller.loadImported(result.records, result.link.title, [...extraWarnings, ...result.warnings], result.link, true);
@@ -132,7 +136,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   // What Notion changed since the last sync, as last seen by a background check made while there were unsaved changes; any overlap with
   // those changes marks the save button. Recomputed from the current changes, so undoing the clashing one clears the mark.
   const [notionEdits, setNotionEdits] = useState<NotionEdits | null>(null);
-  const notionConflicts = useMemo(() => (tree.notion && notionEdits ? [...new Set(conflictingChanges(diffNotion(tree.notion, people, tree.unions), notionEdits).map((change) => change.label))] : []), [tree.notion, notionEdits, people, tree.unions]);
+  const notionConflicts = useMemo(() => (tree.notion && notionEdits ? [...new Set(conflictingChanges(diffNotion(tree.notion, people, tree.unions, tree.graves), notionEdits).map((change) => change.label))] : []), [tree.notion, notionEdits, people, tree.unions, tree.graves]);
   const checkNotion = useCallback(async () => {
     const token = notionSettings.token();
     if (!tree.notion || !token) return;
@@ -241,10 +245,11 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
       void photos.drop(photos.ops.filter((op) => op.personId === personId && op.property === property).map((op) => op.id));
       return;
     }
-    const reverted = revertChange(change, tree.notion, people, tree.unions);
+    const reverted = revertChange(change, tree.notion, people, tree.unions, tree.graves);
     if (reverted.people !== people) commit(reverted.people);
     for (const [key, details] of Object.entries(reverted.unions)) if (details !== tree.unions[key]) updateUnion(key, details);
-  }, [tree.notion, tree.unions, people, photos, commit, updateUnion]);
+    for (const id of new Set([...Object.keys(reverted.graves), ...Object.keys(tree.graves)])) if (reverted.graves[id] !== tree.graves[id]) updateGrave(id, reverted.graves[id] ?? null);
+  }, [tree.notion, tree.unions, tree.graves, people, photos, commit, updateUnion, updateGrave]);
 
   const reloadAfterConflict = useCallback((notion: NotionRefresh, conflicts: NotionChange[]) => {
     setNotionDialogOpen(false);
@@ -257,13 +262,27 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const exportGedcom = useCallback(() => {
     const unions = Object.fromEntries(Object.entries(tree.unions).map(([key, details]) => [key, { ...details, ending: notionLink?.unions[key]?.ending }]));
     // The byte-order mark makes Windows genealogy programs read the file as UTF-8, so Polish letters survive.
-    const file = new Blob(['﻿' + toGedcom(people, unions)], { type: 'text/plain;charset=utf-8' });
+    const file = new Blob(['﻿' + toGedcom(people, unions, tree.graves)], { type: 'text/plain;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(file);
     link.download = `drzewo-${new Date().toISOString().slice(0, 10)}.ged`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 0);
-  }, [people, tree.unions, notionLink]);
+  }, [people, tree.unions, tree.graves, notionLink]);
+
+  const mergeGraves = useCallback((keepId: string, mergedIds: string[], details: GraveDetails) => {
+    const next = new Map(people);
+    for (const person of people.values()) if (person.graveId && mergedIds.includes(person.graveId)) next.set(person.id, { ...person, graveId: keepId });
+    commit(next);
+    updateGrave(keepId, details);
+    for (const id of mergedIds) updateGrave(id, null);
+  }, [people, commit, updateGrave]);
+
+  const removeGrave = useCallback((id: string) => {
+    const buried = [...people.values()].filter((person) => person.graveId === id);
+    if (buried.length) { const next = new Map(people); for (const person of buried) next.set(person.id, { ...person, graveId: undefined }); commit(next); }
+    updateGrave(id, null);
+  }, [people, commit, updateGrave]);
 
   const handleReset = useCallback(() => {
     if (notionPending !== undefined || dirty) setCloseDialogOpen(true); else reset();
@@ -275,30 +294,36 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     return {
       onStartEdit: () => setEditingId(id),
       onCancelEdit: () => { setEditingId(null); if (id === newPersonId) { commit(deletePerson(people, id)); setNewPersonId(null); close(); } },
-      onSaveDetails: (details) => { commit(updatePersonDetails(people, id, details)); setEditingId(null); if (id === newPersonId) setNewPersonId(null); },
+      onSaveDetails: (details, grave) => {
+        commit(updatePersonDetails(people, id, details));
+        if (grave && JSON.stringify(grave.details) !== JSON.stringify(tree.graves[grave.id] ?? null)) updateGrave(grave.id, grave.details);
+        setEditingId(null);
+        if (id === newPersonId) setNewPersonId(null);
+      },
       onDelete: () => { commit(deletePerson(people, id)); close(); },
       onAddRelation: (kind, otherId, secondParentId) => apply(withSecondParent(addRelative(people, id, kind, otherId), otherId, kind === 'children' ? secondParentId : null)),
       onCreateRelative: (kind, names, gender, secondParentId) => { const created = createRelative(people, id, kind, names, gender); return apply(withSecondParent(created, created.ok ? created.id : undefined, kind === 'children' ? secondParentId : null)); },
       onRemoveRelation: (kind, otherId) => commit(removeRelative(people, id, kind, otherId)),
     };
-  }, [drawerId, people, commit, close, newPersonId]);
+  }, [drawerId, people, commit, close, newPersonId, tree.graves, updateGrave]);
 
   return (
     <PhotosContext.Provider value={photosContext}>
     <div className="flex h-full flex-col">
-      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} onExportGedcom={exportGedcom} onCloseAllTabs={view.tabs.length > 1 ? () => { closeTabs(view.tabs.map((tab) => tab.id), HOME_TAB_ID); close(); } : undefined} />
+      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} onExportGedcom={exportGedcom} onShowCemeteries={() => setCemeteriesOpen(true)} onCloseAllTabs={view.tabs.length > 1 ? () => { closeTabs(view.tabs.map((tab) => tab.id), HOME_TAB_ID); close(); } : undefined} />
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => { if (!isPhoneLayout()) setTabMenu({ id, x, y }); }} />
       <main className="relative flex-1 overflow-hidden">
         <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { if (isPhoneLayout()) return; select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => { if (!isPhoneLayout()) setMenu({ x, y, personId: null }); }} />
         {people.size > 0 && <ViewControls connection={connection && connectWithId && connectFromId ? { fromName: connectFromId === meId ? 'Ja' : displayName(people.get(connectFromId)!), fromIsMe: connectFromId === meId, name: displayName(people.get(connectWithId)!), description: describeRelationship(connection) } : undefined} degrees={degrees} isMine={activeTab.id === HOME_TAB_ID} rootName={rootId && people.has(rootId) ? displayName(people.get(rootId)!) : undefined} shownCount={visible.size} totalCount={people.size} onDegreeChange={changeDegree} />}
         {people.size === 0 && <EmptyTree onAddPerson={addPerson} />}
         <WarningBanner warnings={warnings} onDismiss={dismissWarnings} />
-        <PersonDrawer isNew={drawerId !== null && drawerId === newPersonId} onConnectWith={setConnectionFromId} notionPageId={tree.notion ? (drawerId && tree.notion.pageIds[drawerId]) || null : undefined} relationToMe={drawerId && meId && drawerId !== meId ? describeToMeOrNull(relationship(people, meId, drawerId, unionKindOf)) : undefined} onShowConnection={meId ? (id) => { if (id === meId) return; openConnectionTab(null, id); if (isPhoneLayout()) close(); } : undefined} person={drawerPerson} open={activeSelectedId !== null} editing={editingId !== null && editingId === drawerId} people={people} describeUnion={describeSpouseUnion} unions={unionAccess} actions={actions} onSelect={selectAndFocus} onFocus={focus} onShowFamily={(id) => { openFamily(id); if (isPhoneLayout()) close(); }} onClose={close} />
+        <PersonDrawer isNew={drawerId !== null && drawerId === newPersonId} onConnectWith={setConnectionFromId} notionPageId={tree.notion ? (drawerId && tree.notion.pageIds[drawerId]) || null : undefined} relationToMe={drawerId && meId && drawerId !== meId ? describeToMeOrNull(relationship(people, meId, drawerId, unionKindOf)) : undefined} onShowConnection={meId ? (id) => { if (id === meId) return; openConnectionTab(null, id); if (isPhoneLayout()) close(); } : undefined} person={drawerPerson} open={activeSelectedId !== null} editing={editingId !== null && editingId === drawerId} people={people} graves={tree.graves} gravesEnabled={gravesEnabled} describeUnion={describeSpouseUnion} unions={unionAccess} actions={actions} onSelect={selectAndFocus} onFocus={focus} onShowFamily={(id) => { openFamily(id); if (isPhoneLayout()) close(); }} onClose={close} />
       </main>
       {(meId === null || changingMe) && <WhoAreYouDialog people={people} currentMeId={meId} onChoose={chooseMe} onCreate={createMe} onCancel={meId !== null ? () => setChangingMe(false) : undefined} />}
       {tabMenu && tabMenuItems(tabMenu.id).length > 0 && <ContextMenu x={tabMenu.x} y={tabMenu.y} items={tabMenuItems(tabMenu.id)} onClose={() => setTabMenu(null)} />}
       {menu && <ContextMenu x={menu.x} y={menu.y} title={menu.personId && people.has(menu.personId) ? displayName(people.get(menu.personId)!) : undefined} items={menuItems(menu.personId)} onClose={closeMenu} />}
       {connectionFromId && people.has(connectionFromId) && <PersonPickDialog title={`Powiązanie: ${displayName(people.get(connectionFromId)!)} ↔ …`} people={people} exclude={new Set([connectionFromId])} onPick={(toId) => { openConnectionTab(connectionFromId, toId); setConnectionFromId(null); if (isPhoneLayout()) close(); }} onClose={() => setConnectionFromId(null)} />}
+      {cemeteriesOpen && <CemeteriesDialog people={people} graves={tree.graves} withPhotos={Boolean(tree.notion)} onSelectPerson={(id) => { setCemeteriesOpen(false); selectAndFocus(id); }} onSaveGrave={updateGrave} onMerge={mergeGraves} onRemoveGrave={removeGrave} onClose={() => setCemeteriesOpen(false)} />}
       {deleteCandidate && people.has(deleteCandidate) && (
         <ConfirmDialog title={`Usunąć: ${displayName(people.get(deleteCandidate)!)}?`} confirmLabel="Usuń" danger onConfirm={() => { commit(deletePerson(people, deleteCandidate)); if (selectedId === deleteCandidate) close(); setDeleteCandidate(null); }} onCancel={() => setDeleteCandidate(null)}>
           <p>Osoba i jej powiązania zostaną usunięte. Możesz cofnąć przez Ctrl+Z.</p>
@@ -320,7 +345,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
           {tree.notion ? <p>Lokalna kopia „{tree.sourceName}” zostanie usunięta z tej przeglądarki. Dane w Notion pozostaną bez zmian i w każdej chwili możesz je zaimportować ponownie.</p> : <p>Drzewo zostanie usunięte z tej przeglądarki.</p>}
         </ConfirmDialog>
       )}
-      {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} notionEdits={notionEdits} photoOps={photos.ops} onPhotosSaved={(ids) => void photos.drop(ids)} onRevert={revertNotionChange} onConflict={reloadAfterConflict} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
+      {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} graves={tree.graves} notionEdits={notionEdits} photoOps={photos.ops} onPhotosSaved={(ids) => void photos.drop(ids)} onRevert={revertNotionChange} onConflict={reloadAfterConflict} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
     </div>
     </PhotosContext.Provider>
   );

@@ -7,8 +7,8 @@ export interface Person {
   deathDate?: string;
   birthPlace?: string;
   deathPlace?: string;
-  cemetery?: string;
-  burialInfo?: string;
+  // Key of the grave in FamilyTree.graves; people buried together share one grave.
+  graveId?: string;
   gender: Gender;
   parents: string[];
   children: string[];
@@ -35,6 +35,17 @@ export interface UnionRecord extends UnionDetails {
   ending?: string;
 }
 
+// What the app lets you edit about a grave; mirrors the Groby columns Nazwa, Cmentarz and Informacje.
+export interface GraveDetails {
+  name?: string;
+  cemetery?: string;
+  info?: string;
+}
+
+export interface GraveRecord extends GraveDetails {
+  pageId: string;
+}
+
 export interface NotionLink {
   databaseId: string;
   dataSourceId: string;
@@ -44,11 +55,15 @@ export interface NotionLink {
   externalIds: Record<string, string>;
   // Keyed by unionKey(a, b): the two person ids, sorted.
   unions: Record<string, UnionRecord>;
+  // The Groby database, found through the Osoby.Grób relation; absent while Osoby has no such column.
+  gravesDataSourceId?: string;
+  // Keyed by grave id: the page id for graves read from Notion, an app-made id for graves created here.
+  graves?: Record<string, GraveRecord>;
   baseline: Person[];
   syncedAt: string;
   // Which Notion columns the baseline was read with; a refresh reads everything again when it is older than NOTION_FIELDS_VERSION.
   fieldsVersion?: number;
-  // What Notion has in each person's photo columns, keyed by person id and then column name; the images themselves are cached in IndexedDB.
+  // What Notion has in each person's or grave's photo columns, keyed by person or grave id and then column name; the images themselves are cached in IndexedDB.
   photos?: Record<string, Record<string, StoredPhoto[]>>;
 }
 
@@ -71,6 +86,8 @@ export interface FamilyTree {
   notion?: NotionLink;
   // Current union details keyed by unionKey; for a Notion tree, link.unions holds what Notion last had, to diff against.
   unions: Record<string, UnionDetails>;
+  // Current grave details keyed by grave id; for a Notion tree, link.graves holds what Notion last had.
+  graves: Record<string, GraveDetails>;
 }
 
 export interface TreeStats {

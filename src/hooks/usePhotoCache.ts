@@ -3,7 +3,7 @@ import type { NotionLink, StoredPhoto } from '../types/person';
 import { photoCache } from '../lib/photoQueue';
 import { backfillThumbnails, cacheThumbnail, refreshPhotoUrls } from '../lib/notion/notionPhotos';
 import { NotionClient } from '../lib/notion/notionClient';
-import { PHOTO_PROPERTIES } from '../lib/notion/notionMapping';
+import { photoOwnerPage } from '../lib/notion/notionMapping';
 import { notionSettings } from '../lib/notion/notionSettings';
 
 export interface PhotoCacheState {
@@ -63,10 +63,10 @@ export function usePhotoCache(link: NotionLink | undefined, onThumbnailsAdded: T
           try {
             const { personId, photo } = owners.get(key)!;
             let done = await cacheThumbnail(photo);
-            const pageId = link.pageIds[personId];
-            if (!done && client && pageId && !refreshed.has(personId)) {
+            const owner = photoOwnerPage(link, personId);
+            if (!done && client && owner && !refreshed.has(personId)) {
               refreshed.add(personId);
-              await refreshPhotoUrls(client, pageId, PHOTO_PROPERTIES);
+              await refreshPhotoUrls(client, owner.pageId, owner.properties);
               done = await cacheThumbnail(photo);
             }
             if (!done) throw new Error('no link');
@@ -83,7 +83,7 @@ export function usePhotoCache(link: NotionLink | undefined, onThumbnailsAdded: T
       // One update per person and column, one after another, so two uploads never rewrite the same column at once.
       const groups = new Map<string, Owner[]>();
       for (const owner of owners.values()) {
-        if (owner.photo.thumbKey || !have.has(owner.photo.key) || !link.pageIds[owner.personId]) continue;
+        if (owner.photo.thumbKey || !have.has(owner.photo.key) || !photoOwnerPage(link, owner.personId)) continue;
         const groupKey = `${owner.personId}|${owner.property}`;
         groups.set(groupKey, [...(groups.get(groupKey) ?? []), owner]);
       }
@@ -93,7 +93,7 @@ export function usePhotoCache(link: NotionLink | undefined, onThumbnailsAdded: T
         const { personId, property } = group[0]!;
         try {
           const items = (await Promise.all(group.map(async ({ photo }) => ({ name: photo.name, thumb: await photoCache.get(photo.key) })))).filter((item): item is { name: string; thumb: Blob } => Boolean(item.thumb));
-          const added = await backfillThumbnails(client, link.pageIds[personId]!, property, items);
+          const added = await backfillThumbnails(client, photoOwnerPage(link, personId)!.pageId, property, items);
           if (!cancelled && Object.keys(added).length) onAdded.current(personId, property, added);
         } catch {
           // Left for the next sync: the photo still has no thumbKey, so it is tried again.

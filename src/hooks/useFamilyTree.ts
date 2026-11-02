@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { FamilyTree, NotionLink, PeopleById, Person, UnionDetails } from '../types/person';
+import type { FamilyTree, GraveDetails, NotionLink, PeopleById, Person, UnionDetails } from '../types/person';
 import { parseFamilyData } from '../lib/parseFamilyData';
 
 const STORAGE_KEY = 'nft:data';
@@ -11,6 +11,7 @@ interface StoredTree {
   dirty?: boolean;
   notion?: NotionLink;
   unions?: Record<string, UnionDetails>;
+  graves?: Record<string, GraveDetails>;
 }
 
 interface TreeState {
@@ -26,8 +27,12 @@ function unionsFromLink(notion?: NotionLink): Record<string, UnionDetails> {
   return Object.fromEntries(Object.entries(notion?.unions ?? {}).map(([key, { kind, date, place, notes }]) => [key, { kind, date, place, notes }]));
 }
 
-function toTree(people: Person[], sourceName: string, notion?: NotionLink, unions?: Record<string, UnionDetails>): FamilyTree {
-  return { people: new Map(people.map((p) => [p.id, p])), sourceName, loadId: Date.now(), notion, unions: unions ?? unionsFromLink(notion) };
+function gravesFromLink(notion?: NotionLink): Record<string, GraveDetails> {
+  return Object.fromEntries(Object.entries(notion?.graves ?? {}).map(([id, { name, cemetery, info }]) => [id, { name, cemetery, info }]));
+}
+
+function toTree(people: Person[], sourceName: string, notion?: NotionLink, unions?: Record<string, UnionDetails>, graves?: Record<string, GraveDetails>): FamilyTree {
+  return { people: new Map(people.map((p) => [p.id, p])), sourceName, loadId: Date.now(), notion, unions: unions ?? unionsFromLink(notion), graves: graves ?? gravesFromLink(notion) };
 }
 
 function loadStored(): TreeState {
@@ -35,9 +40,9 @@ function loadStored(): TreeState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return emptyState;
     const stored = JSON.parse(raw) as StoredTree;
-    if (Array.isArray(stored.people) && stored.people.length === 0) return { ...emptyState, tree: toTree([], stored.sourceName, stored.notion, stored.unions), dirty: Boolean(stored.dirty) };
+    if (Array.isArray(stored.people) && stored.people.length === 0) return { ...emptyState, tree: toTree([], stored.sourceName, stored.notion, stored.unions, stored.graves), dirty: Boolean(stored.dirty) };
     const result = parseFamilyData(stored.people);
-    return result.ok ? { ...emptyState, tree: toTree(result.people, stored.sourceName, stored.notion, stored.unions), dirty: Boolean(stored.dirty) } : emptyState;
+    return result.ok ? { ...emptyState, tree: toTree(result.people, stored.sourceName, stored.notion, stored.unions, stored.graves), dirty: Boolean(stored.dirty) } : emptyState;
   } catch {
     return emptyState;
   }
@@ -45,7 +50,7 @@ function loadStored(): TreeState {
 
 function persist(tree: FamilyTree, dirty: boolean) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sourceName: tree.sourceName, people: [...tree.people.values()], dirty, notion: tree.notion, unions: tree.unions } satisfies StoredTree));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sourceName: tree.sourceName, people: [...tree.people.values()], dirty, notion: tree.notion, unions: tree.unions, graves: tree.graves } satisfies StoredTree));
   } catch {
     // Quota exceeded or storage blocked: the tree still works for this session.
   }
@@ -83,6 +88,16 @@ export function useFamilyTree() {
     setState((s) => (s.tree ? { ...s, tree: { ...s.tree, unions: { ...s.tree.unions, [key]: details } }, dirty: true } : s));
   }, []);
 
+  // Like union details, a grave is edited through a form with its own Anuluj and is shared by everyone buried in it; null removes it.
+  const updateGrave = useCallback((id: string, details: GraveDetails | null) => {
+    setState((s) => {
+      if (!s.tree) return s;
+      const graves = { ...s.tree.graves };
+      if (details) graves[id] = details; else delete graves[id];
+      return { ...s, tree: { ...s.tree, graves }, dirty: true };
+    });
+  }, []);
+
   const startEmpty = useCallback(() => {
     setState({ ...emptyState, tree: toTree([], 'nowe-drzewo.json') });
     setWarnings([]);
@@ -116,7 +131,7 @@ export function useFamilyTree() {
 
   const dismissWarnings = useCallback(() => setWarnings([]), []);
 
-  return { tree, warnings, dirty, canUndo: state.past.length > 0, canRedo: state.future.length > 0, loadImported, setNotionLink, updateNotionLink, updateUnion, startEmpty, reset, commit, undo, redo, dismissWarnings };
+  return { tree, warnings, dirty, canUndo: state.past.length > 0, canRedo: state.future.length > 0, loadImported, setNotionLink, updateNotionLink, updateUnion, updateGrave, startEmpty, reset, commit, undo, redo, dismissWarnings };
 }
 
 export type FamilyTreeController = ReturnType<typeof useFamilyTree>;

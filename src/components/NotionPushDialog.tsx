@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, RotateCcw, X } from 'lucide-react';
-import type { NotionLink, PeopleById, UnionDetails } from '../types/person';
+import type { GraveDetails, NotionLink, PeopleById, UnionDetails } from '../types/person';
 import { canRevert, conflictingChanges, diffNotion, photoChanges, pushToNotion, type NotionChange, type NotionEdits } from '../lib/notion/notionPush';
 import { refreshNotionDatabase, type NotionRefresh } from '../lib/notion/notionMapping';
 import type { PhotoOp } from '../lib/photoQueue';
@@ -12,6 +12,7 @@ interface NotionPushDialogProps {
   link: NotionLink;
   people: PeopleById;
   unions: Record<string, UnionDetails>;
+  graves: Record<string, GraveDetails>;
   photoOps: PhotoOp[];
   onPhotosSaved: (opIds: string[]) => void;
   // Puts one change back to what Notion has, so it is not saved.
@@ -33,13 +34,16 @@ const kindLabel: Record<NotionChange['kind'], { label: string; className: string
   'union-update': { label: 'Związek', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
   'union-rename': { label: 'Związek', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
   'union-trash': { label: 'Związek do kosza', className: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
+  'grave-create': { label: 'Nowy grób', className: 'bg-stone-200 text-stone-700 dark:bg-stone-500/20 dark:text-stone-300' },
+  'grave-update': { label: 'Grób', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
+  'grave-trash': { label: 'Usunięcie grobu', className: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
   photos: { label: 'Zdjęcia', className: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
 };
 
 type Phase = { kind: 'review' } | { kind: 'checking' } | { kind: 'pushing'; done: number; total: number } | { kind: 'done'; saved: number } | { kind: 'failed'; error: string };
 
-export function NotionPushDialog({ link, people, unions, notionEdits, photoOps, onPhotosSaved, onRevert, onConflict, onPushed, onClose }: NotionPushDialogProps) {
-  const changes = useMemo(() => [...diffNotion(link, people, unions), ...photoChanges(photoOps, people)], [link, people, unions, photoOps]);
+export function NotionPushDialog({ link, people, unions, graves, notionEdits, photoOps, onPhotosSaved, onRevert, onConflict, onPushed, onClose }: NotionPushDialogProps) {
+  const changes = useMemo(() => [...diffNotion(link, people, unions, graves), ...photoChanges(photoOps, people, graves)], [link, people, unions, graves, photoOps]);
   const clashing = useMemo(() => new Set(notionEdits ? conflictingChanges(changes, notionEdits) : []), [changes, notionEdits]);
   const [token, setToken] = useState(notionSettings.token);
   const [phase, setPhase] = useState<Phase>({ kind: 'review' });
@@ -66,7 +70,7 @@ export function NotionPushDialog({ link, people, unions, notionEdits, photoOps, 
     const conflicts = conflictingChanges(changes, notion);
     if (conflicts.length) { onConflict(notion, conflicts); return; }
     setPhase({ kind: 'pushing', done: 0, total: 1 });
-    const result = await pushToNotion(token.trim(), link, people, unions, photoOps, (done, total) => setPhase({ kind: 'pushing', done, total }), onPhotosSaved);
+    const result = await pushToNotion(token.trim(), link, people, unions, graves, photoOps, (done, total) => setPhase({ kind: 'pushing', done, total }), onPhotosSaved);
     onPushed(result.link);
     setPhase(result.error ? { kind: 'failed', error: result.applied ? `${result.error} Część zmian zapisano przed błędem; ponowienie wyśle pozostałe.` : result.error } : { kind: 'done', saved });
   };
@@ -93,7 +97,7 @@ export function NotionPushDialog({ link, people, unions, notionEdits, photoOps, 
             <p className="py-6 text-center text-sm text-zinc-500">Brak zmian do zapisania.</p>
           ) : (
             <>
-              {clashing.size > 0 && <p role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"><AlertCircle className="mt-px size-3.5 shrink-0" /><span>Ktoś zmienił w Notion osoby oznaczone „!”. Zapis wczyta aktualne dane z Notion i odrzuci niezapisane zmiany — cofnij oznaczone zmiany, aby zapisać pozostałe.</span></p>}
+              {clashing.size > 0 && <p role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"><AlertCircle className="mt-px size-3.5 shrink-0" /><span>Ktoś zmienił w Notion pozycje oznaczone „!”. Zapis wczyta aktualne dane z Notion i odrzuci niezapisane zmiany — cofnij oznaczone zmiany, aby zapisać pozostałe.</span></p>}
               <p className="mb-2 text-xs text-zinc-500">{countOf(changes.length, 'zmiana', 'zmiany', 'zmian')} od ostatniej synchronizacji:</p>
               <ul className="divide-y divide-zinc-100 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                 {changes.map((change) => (

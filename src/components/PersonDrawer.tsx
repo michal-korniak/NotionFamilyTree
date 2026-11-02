@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Cake, Flower2, Hourglass, Link2, Pencil, Trash2, Users, Waypoints, X } from 'lucide-react';
-import type { Gender, PeopleById, Person, UnionDetails } from '../types/person';
+import type { Gender, GraveDetails, PeopleById, Person, UnionDetails } from '../types/person';
 import { siblingIds, type NewPersonNames, type PersonDetails, type RelativeKind } from '../lib/treeEdits';
 import { computeAge, formatDate, formatLifeYears, hasKnownDate, isDeceased } from '../lib/dates';
 import { relativesOf } from '../lib/relationships';
@@ -11,14 +11,15 @@ import { IconButton } from './IconButton';
 import { PersonForm } from './PersonForm';
 import { RelativeList, type RelativeEditing } from './RelativeList';
 import { countOf } from '../lib/plural';
-import { PEOPLE } from '../lib/notion/notionMapping';
+import { GRAVES, PEOPLE } from '../lib/notion/notionMapping';
+import { buriedIn } from '../lib/graves';
 import { PhotoGallery } from './PhotoGallery';
 import { usePhotosContext } from '../hooks/usePhotoQueue';
 
 export interface PersonEditActions {
   onStartEdit: () => void;
   onCancelEdit: () => void;
-  onSaveDetails: (details: PersonDetails) => void;
+  onSaveDetails: (details: PersonDetails, grave?: { id: string; details: GraveDetails }) => void;
   onDelete: () => void;
   onAddRelation: (kind: RelativeKind, otherId: string, secondParentId?: string | null) => string | null;
   onCreateRelative: (kind: RelativeKind, names: NewPersonNames, gender: Gender, secondParentId?: string | null) => string | null;
@@ -30,6 +31,8 @@ interface PersonDrawerProps {
   open: boolean;
   editing: boolean;
   people: PeopleById;
+  graves: Record<string, GraveDetails>;
+  gravesEnabled: boolean;
   describeUnion?: (personId: string, spouseId: string) => string | undefined;
   unions: { get: (personId: string, spouseId: string) => UnionDetails | undefined; save: (personId: string, spouseId: string, details: UnionDetails) => void };
   actions: PersonEditActions;
@@ -77,9 +80,11 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function PersonDetailsView({ person, relationToMe, actions }: { person: Person; relationToMe?: string; actions?: ReactNode }) {
+function PersonDetailsView({ person, people, graves, relationToMe, actions, onSelect }: { person: Person; people: PeopleById; graves: Record<string, GraveDetails>; relationToMe?: string; actions?: ReactNode; onSelect: (id: string) => void }) {
   const { listing, queue } = usePhotosContext();
-  const hasPhotos = (property: string) => Boolean(listing[person.id]?.[property]?.length) || queue.ops.some((op) => op.kind === 'add' && op.personId === person.id && op.property === property);
+  const hasPhotos = (ownerId: string, property: string) => Boolean(listing[ownerId]?.[property]?.length) || queue.ops.some((op) => op.kind === 'add' && op.personId === ownerId && op.property === property);
+  const grave = person.graveId ? graves[person.graveId] : undefined;
+  const buriedWith = person.graveId ? buriedIn(people, person.graveId).filter((other) => other.id !== person.id) : [];
   const age = computeAge(person);
   const showBorn = hasKnownDate(person.birthDate) || Boolean(person.birthPlace);
   const showDied = hasKnownDate(person.deathDate) || Boolean(person.deathPlace);
@@ -107,14 +112,20 @@ function PersonDetailsView({ person, relationToMe, actions }: { person: Person; 
         </div>
       )}
 
-      {hasPhotos(PEOPLE.photos) && <Section title="Zdjęcia"><PhotoGallery personId={person.id} property={PEOPLE.photos} /></Section>}
+      {hasPhotos(person.id, PEOPLE.photos) && <Section title="Zdjęcia"><PhotoGallery personId={person.id} property={PEOPLE.photos} /></Section>}
 
-      {(person.cemetery || person.burialInfo || hasPhotos(PEOPLE.gravePhotos)) && (
+      {grave && person.graveId && (
         <Section title="Pochówek">
           <div className="space-y-2">
-            {person.cemetery && <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{person.cemetery}</p>}
-            {person.burialInfo && <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{person.burialInfo}</p>}
-            {hasPhotos(PEOPLE.gravePhotos) && <PhotoGallery personId={person.id} property={PEOPLE.gravePhotos} />}
+            {grave.cemetery && <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{grave.cemetery}</p>}
+            {grave.info && <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{grave.info}</p>}
+            {hasPhotos(person.graveId, GRAVES.photos) && <PhotoGallery personId={person.graveId} property={GRAVES.photos} />}
+            {buriedWith.length > 0 && (
+              <p className="text-xs text-zinc-500">
+                Pochowani razem:{' '}
+                {buriedWith.map((other, index) => <span key={other.id}>{index > 0 && ', '}<button type="button" onClick={() => onSelect(other.id)} className="font-medium text-zinc-700 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-500 dark:text-zinc-300 dark:decoration-zinc-600">{displayName(other)}</button></span>)}
+              </p>
+            )}
           </div>
         </Section>
       )}
@@ -137,7 +148,7 @@ function DeleteConfirmation({ person, onCancel, onConfirm }: { person: Person; o
   );
 }
 
-function DrawerBody({ person, people, editing, isNew, describeUnion, unions, relationToMe, notionPageId, onShowConnection, onConnectWith, actions, onSelect, onShowFamily, onClose }: Omit<PersonDrawerProps, 'person' | 'open'> & { person: Person }) {
+function DrawerBody({ person, people, graves, gravesEnabled, editing, isNew, describeUnion, unions, relationToMe, notionPageId, onShowConnection, onConnectWith, actions, onSelect, onShowFamily, onClose }: Omit<PersonDrawerProps, 'person' | 'open'> & { person: Person }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const siblings = useMemo(() => siblingIds(people, person.id), [people, person.id]);
   const exclude = useMemo(() => new Set([person.id, ...relativesOf(person), ...siblings]), [person, siblings]);
@@ -158,7 +169,7 @@ function DrawerBody({ person, people, editing, isNew, describeUnion, unions, rel
       </div>
       <div className="flex-1 space-y-6 overflow-y-auto p-5">
         {confirmingDelete && <DeleteConfirmation person={person} onCancel={() => setConfirmingDelete(false)} onConfirm={actions.onDelete} />}
-        {editing ? <PersonForm person={person} isNew={isNew} notionPageId={notionPageId} onSave={actions.onSaveDetails} onCancel={actions.onCancelEdit} /> : <PersonDetailsView person={person} relationToMe={relationToMe} actions={(
+        {editing ? <PersonForm person={person} isNew={isNew} notionPageId={notionPageId} people={people} graves={graves} gravesEnabled={gravesEnabled} onSave={actions.onSaveDetails} onCancel={actions.onCancelEdit} /> : <PersonDetailsView person={person} people={people} graves={graves} relationToMe={relationToMe} onSelect={onSelect} actions={(
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => onShowFamily(person.id)} className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300 ${onShowConnection && relationToMe ? '' : 'col-span-2'}`}>
               <Users className="size-3.5" />
