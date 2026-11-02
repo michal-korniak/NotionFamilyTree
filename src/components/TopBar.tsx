@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Church, Download, FileDown, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus, X } from 'lucide-react';
+import { Church, Download, FileDown, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
 import type { PeopleById, TreeStats } from '../types/person';
 import type { Theme } from '../hooks/useTheme';
 import { SearchBar } from './SearchBar';
@@ -29,7 +29,6 @@ interface TopBarProps {
   onRedo: () => void;
   onReset: () => void;
   // Undefined while only "Moje drzewo" is open. On phones tabs have no right-click menu, so the more menu offers this instead.
-  onCloseAllTabs?: () => void;
   onExportGedcom: () => void;
   onShowCemeteries: () => void;
   onGoHome: () => void;
@@ -37,7 +36,7 @@ interface TopBarProps {
 }
 
 
-export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onCloseAllTabs, onExportGedcom, onShowCemeteries }: TopBarProps) {
+export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onExportGedcom, onShowCemeteries }: TopBarProps) {
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur sm:gap-4 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="hidden min-w-0 items-center gap-2 sm:flex">
@@ -91,8 +90,6 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
         <MoreMenu compactItems={[
           { label: 'Dodaj osobę', icon: <UserPlus className="size-3.5" />, onSelect: onAddPerson },
           { label: 'Zarządzaj grobami', icon: <Church className="size-3.5" />, onSelect: onShowCemeteries },
-          'separator',
-          { label: 'Zamknij wszystkie karty', icon: <X className="size-3.5" />, disabled: !onCloseAllTabs, onSelect: () => onCloseAllTabs?.() },
         ]} themeItem={{ label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme }} onChangeMe={onChangeMe} onShowCemeteries={onShowCemeteries} onExportGedcom={onExportGedcom} onClose={onReset} />
       </div>
     </header>

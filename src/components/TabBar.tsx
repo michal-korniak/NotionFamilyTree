@@ -24,6 +24,7 @@ const icons: Record<TabInfo['icon'], ReactNode> = {
 
 const FADE = '2rem';
 const DRAG_THRESHOLD = 5;
+const LONG_PRESS_MS = 500;
 
 function edgeMask(start: boolean, end: boolean): string | undefined {
   if (!start && !end) return undefined;
@@ -96,6 +97,31 @@ export function TabBar({ tabs, activeId, onActivate, onClose, onMenu }: TabBarPr
     measure();
   }, [activeId, tabs.length, measure]);
 
+  // Touch has no right click: holding a tab opens its menu, as Android's own contextmenu would, which iOS never fires.
+  const longPress = useRef<{ timer: number; pointerId: number; x: number; y: number } | null>(null);
+  const lastPointerType = useRef('mouse');
+  const suppressClick = useRef(false);
+  const cancelLongPress = () => { if (longPress.current) clearTimeout(longPress.current.timer); longPress.current = null; };
+  const startLongPress = (event: React.PointerEvent<HTMLDivElement>, tabId: string) => {
+    lastPointerType.current = event.pointerType;
+    suppressClick.current = false;
+    cancelLongPress();
+    if (event.pointerType === 'mouse') return;
+    const tab = event.currentTarget;
+    const timer = window.setTimeout(() => {
+      longPress.current = null;
+      const rect = tab.getBoundingClientRect();
+      suppressClick.current = true;
+      navigator.vibrate?.(10);
+      onMenu(tabId, rect.left, rect.bottom);
+    }, LONG_PRESS_MS);
+    longPress.current = { timer, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+  };
+  const moveLongPress = (event: React.PointerEvent) => {
+    const press = longPress.current;
+    if (press && press.pointerId === event.pointerId && Math.hypot(event.clientX - press.x, event.clientY - press.y) > DRAG_THRESHOLD * 2) cancelLongPress();
+  };
+
   const mask = edgeMask(overflow.start, overflow.end);
   return (
     <div className="h-9 shrink-0 border-b border-zinc-200 bg-zinc-100/80 dark:border-zinc-800 dark:bg-zinc-900/60">
@@ -103,7 +129,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose, onMenu }: TabBarPr
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         return (
-          <div key={tab.id} onContextMenu={(e) => { e.preventDefault(); onMenu(tab.id, e.clientX, e.clientY); }} className={`group flex h-8 max-w-60 shrink-0 items-center rounded-t-lg border border-b-0 text-xs transition-colors ${active ? 'border-zinc-200 bg-zinc-50 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-zinc-200/60 hover:text-zinc-800 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-200'}`}>
+          <div key={tab.id} onContextMenu={(e) => { e.preventDefault(); if (lastPointerType.current === 'mouse') onMenu(tab.id, e.clientX, e.clientY); }} onPointerDown={(e) => startLongPress(e, tab.id)} onPointerMove={moveLongPress} onPointerUp={cancelLongPress} onPointerCancel={cancelLongPress} onClickCapture={(e) => { if (suppressClick.current) { e.stopPropagation(); e.preventDefault(); suppressClick.current = false; } }} className={`group flex h-8 max-w-60 shrink-0 items-center rounded-t-lg select-none [-webkit-touch-callout:none] border border-b-0 text-xs transition-colors ${active ? 'border-zinc-200 bg-zinc-50 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-zinc-200/60 hover:text-zinc-800 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-200'}`}>
             <button type="button" role="tab" aria-selected={active} onClick={() => onActivate(tab.id)} onAuxClick={(e) => { if (e.button === 1 && tab.closable) { e.preventDefault(); onClose(tab.id); } }} title={tab.label} className={`flex h-full min-w-0 items-center gap-1.5 pl-3 ${tab.closable ? 'pr-1' : 'pr-3'} ${active ? 'font-medium' : ''}`}>
               <span className="shrink-0 text-zinc-400">{icons[tab.icon]}</span>
               <span className="truncate">{tab.label}</span>
