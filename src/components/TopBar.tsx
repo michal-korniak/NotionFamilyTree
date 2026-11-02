@@ -22,13 +22,13 @@ interface TopBarProps {
   refreshing: boolean;
   onRefresh: () => void;
   onOpenNotion: () => void;
+  onConnectNotion: () => void;
   onToggleTheme: () => void;
   onSelect: (id: string) => void;
   onAddPerson: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onReset: () => void;
-  // Undefined while only "Moje drzewo" is open. On phones tabs have no right-click menu, so the more menu offers this instead.
   onExportGedcom: () => void;
   onShowCemeteries: () => void;
   onGoHome: () => void;
@@ -36,7 +36,7 @@ interface TopBarProps {
 }
 
 
-export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onExportGedcom, onShowCemeteries }: TopBarProps) {
+export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onConnectNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onExportGedcom, onShowCemeteries }: TopBarProps) {
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur sm:gap-4 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="hidden min-w-0 items-center gap-2 sm:flex">
@@ -74,6 +74,12 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           <button type="button" onClick={onUndo} disabled={!canUndo} aria-label="Cofnij" title="Cofnij" className="grid w-8 place-items-center rounded-l-md border-r border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:text-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 dark:hover:text-zinc-100 dark:disabled:text-zinc-700"><Undo2 className="size-3.5" /></button>
           <button type="button" onClick={onRedo} disabled={!canRedo} aria-label="Ponów" title="Ponów" className="grid w-8 place-items-center rounded-r-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-100 dark:disabled:text-zinc-700"><Redo2 className="size-3.5" /></button>
         </div>
+        {notionPending === undefined && (
+          <button type="button" onClick={onConnectNotion} title="Połącz z Notion: utwórz bazy w Notion i zapisz w nich to drzewo" className="inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900">
+            <NotionIcon className="size-3.5" />
+            <span className="hidden lg:inline">Połącz z Notion</span>
+          </button>
+        )}
         {notionPending !== undefined && (
           <div className="flex h-8 items-stretch rounded-md border border-zinc-200 dark:border-zinc-800">
             <button type="button" onClick={onRefresh} disabled={refreshing} aria-label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} title={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} className="grid w-8 place-items-center rounded-l-md border-r border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-default dark:border-zinc-800 dark:hover:bg-zinc-900 dark:hover:text-zinc-100">

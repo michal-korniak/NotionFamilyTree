@@ -23,6 +23,7 @@ import { TabBar, type TabInfo } from './components/TabBar';
 import { defaultRoot, familyMembers, isPhoneLayout, restrictTo } from './lib/familyView';
 import { generationDepth } from './lib/stats';
 import { NotionPushDialog } from './components/NotionPushDialog';
+import { NotionExportDialog } from './components/NotionExportDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { conflictingChanges, diffNotion, photoChanges, revertChange, type NotionChange, type NotionEdits } from './lib/notion/notionPush';
 import { PhotosContext, usePhotoQueue } from './hooks/usePhotoQueue';
@@ -91,6 +92,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const [notionDialogOpen, setNotionDialogOpen] = useState(false);
+  const [notionExportOpen, setNotionExportOpen] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [cemeteriesOpen, setCemeteriesOpen] = useState(false);
   const [unsavedFormPrompt, setUnsavedFormPrompt] = useState(false);
@@ -291,7 +293,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     updateGrave(id, null);
   }, [people, commit, updateGrave]);
 
-  const updateWaiting = useAppUpdate(editingId === null && !notionDialogOpen && !cemeteriesOpen && !refreshing && !refreshConfirmOpen && !closeDialogOpen && deleteCandidate === null);
+  const updateWaiting = useAppUpdate(editingId === null && !notionDialogOpen && !notionExportOpen && !cemeteriesOpen && !refreshing && !refreshConfirmOpen && !closeDialogOpen && deleteCandidate === null);
 
   const handleReset = useCallback(() => {
     if (notionPending !== undefined || dirty) setCloseDialogOpen(true); else reset();
@@ -319,7 +321,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   return (
     <PhotosContext.Provider value={photosContext}>
     <div className="flex h-full flex-col">
-      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={openNotionDialog} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} onExportGedcom={exportGedcom} onShowCemeteries={() => setCemeteriesOpen(true)} />
+      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={openNotionDialog} onConnectNotion={() => setNotionExportOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} onExportGedcom={exportGedcom} onShowCemeteries={() => setCemeteriesOpen(true)} />
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => setTabMenu({ id, x, y })} />
       <main className="relative flex-1 overflow-hidden">
         <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { if (isPhoneLayout()) return; select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => { if (!isPhoneLayout()) setMenu({ x, y, personId: null }); }} />
@@ -365,6 +367,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
           {tree.notion ? <p>Lokalna kopia „{tree.sourceName}” zostanie usunięta z tej przeglądarki. Dane w Notion pozostaną bez zmian i w każdej chwili możesz je zaimportować ponownie.</p> : <p>Drzewo zostanie usunięte z tej przeglądarki.</p>}
         </ConfirmDialog>
       )}
+      {notionExportOpen && <NotionExportDialog onCreated={(link) => { setNotionLink(link); setNotionExportOpen(false); openNotionDialog(); }} onClose={() => setNotionExportOpen(false)} />}
       {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} graves={tree.graves} notionEdits={notionEdits} photoOps={photos.ops} onPhotosSaved={(ids) => void photos.drop(ids)} onRevert={revertNotionChange} onConflict={reloadAfterConflict} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
     </div>
     </PhotosContext.Provider>

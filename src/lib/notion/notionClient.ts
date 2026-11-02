@@ -40,7 +40,7 @@ export interface NotionPropertySchema {
   id: string;
   name: string;
   type: string;
-  relation?: { data_source_id: string };
+  relation?: { data_source_id: string; dual_property?: { synced_property_name?: string } };
 }
 
 interface NotionList<T> {
@@ -155,6 +155,17 @@ export class NotionClient {
       cursor = list.has_more ? list.next_cursor : null;
     } while (cursor);
     return ids;
+  }
+
+  // The response has carried the new data source both as data_sources[] and as data_source, so either is accepted.
+  async createDatabase(parentPageId: string, title: string, properties: Record<string, unknown>): Promise<{ databaseId: string; dataSourceId: string }> {
+    const database = await this.request<{ id: string; data_sources?: { id: string }[]; data_source?: { id: string } }>('POST', '/databases', { parent: { type: 'page_id', page_id: parentPageId }, title: [{ type: 'text', text: { content: title } }], initial_data_source: { properties } });
+    const dataSourceId = database.data_sources?.[0]?.id ?? database.data_source?.id ?? (await this.retrieveDatabase(database.id)).dataSourceId;
+    return { databaseId: database.id, dataSourceId };
+  }
+
+  updateDataSource(dataSourceId: string, properties: Record<string, unknown>): Promise<unknown> {
+    return this.request('PATCH', `/data_sources/${dataSourceId}`, { properties });
   }
 
   createPage(dataSourceId: string, properties: Record<string, unknown>): Promise<NotionPage> {
