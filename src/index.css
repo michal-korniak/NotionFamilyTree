@@ -30,10 +30,9 @@ html.dark {
   color-scheme: only dark;
 }
 
-/* Phones zoom with a pinch, so only "fit view" stays. */
+/* Phones zoom and pan with fingers, so the view controls only take room there. */
 @media (max-width: 639px) {
-  .react-flow__controls-zoomin,
-  .react-flow__controls-zoomout {
+  .react-flow__controls {
     display: none;
   }
 }
