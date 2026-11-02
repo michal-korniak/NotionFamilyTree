@@ -214,10 +214,9 @@ function findRelationship(people: PeopleById, referenceId: string, targetId: str
     return { kind: 'spouse', label: relationLabel('spouse', target.gender, unionKind?.(referenceId, targetId)), path: [referenceId, targetId] };
   }
 
+  // When people are related in several ways (a distant cousin who married your sister), the closest link wins; at equal degree, blood.
   const blood = bloodLink(people, referenceId, targetId);
-  if (blood) return { kind: 'blood', label: bloodLabel(people, blood, target.gender), degree: blood.up + blood.down, path: blood.members };
-
-  let best: Relationship | null = null;
+  let best: Relationship | null = blood && { kind: 'blood', label: bloodLabel(people, blood, target.gender), degree: blood.up + blood.down, path: blood.members };
   const consider = (candidate: Relationship) => { if (!best || candidate.degree! < best.degree!) best = candidate; };
   for (const spouse of reference.spouses) {
     const link = people.has(spouse) ? bloodLink(people, spouse, targetId) : null;
