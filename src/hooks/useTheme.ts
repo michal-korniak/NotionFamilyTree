@@ -14,7 +14,7 @@ export function useTheme() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]')?.setAttribute('content', theme === 'dark' ? 'only dark' : 'only light');
-    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#09090b' : '#ffffff');
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1c1c1c' : '#ffffff');
     try { localStorage.setItem(STORAGE_KEY, theme); } catch { /* storage unavailable */ }
   }, [theme]);
 

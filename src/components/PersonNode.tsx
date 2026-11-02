@@ -16,14 +16,14 @@ export type PersonFlowNode = Node<PersonNodeData, 'person'>;
 // The background tells gender at a glance; the border (and ring) carries selection and relation. Border colours live only in the
 // state classes, because a shared base border colour on the card would override the relation colour.
 const genderBackground: Record<Person['gender'], string> = {
-  M: 'bg-sky-50 dark:bg-sky-950/60',
-  F: 'bg-pink-50 dark:bg-pink-950/50',
+  M: 'bg-sky-50 dark:bg-[#1d262e]',
+  F: 'bg-pink-50 dark:bg-[#2b2026]',
   U: 'bg-white dark:bg-zinc-900',
 };
 
 const restingBorder: Record<Person['gender'], string> = {
-  M: 'border-sky-200 dark:border-sky-900',
-  F: 'border-pink-200 dark:border-pink-900',
+  M: 'border-sky-200 dark:border-[#2f4556]',
+  F: 'border-pink-200 dark:border-[#553546]',
   U: 'border-zinc-200 dark:border-zinc-800',
 };
 

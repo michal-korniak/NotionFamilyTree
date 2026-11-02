@@ -30,6 +30,15 @@ html.dark {
   color-scheme: only dark;
 }
 
+/* The dark theme uses soft neutral greys instead of Tailwind's near-black, blue-tinted zinc; overriding the shades here restyles every dark: utility at once. */
+.dark {
+  --color-zinc-950: #1c1c1c;
+  --color-zinc-900: #252525;
+  --color-zinc-800: #353535;
+  --color-zinc-700: #474747;
+  --color-zinc-600: #5e5e5e;
+}
+
 /* Samsung Internet ignores color-scheme and darkens any page whose stylesheets have no prefers-color-scheme: dark rule, taking it as a site
    without a dark theme. The app switches themes with a class instead, so this rule only marks it as having one; the colors stay as above. */
 @media (prefers-color-scheme: dark) {
