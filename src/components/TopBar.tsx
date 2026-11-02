@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Download, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
+import { Download, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus, X } from 'lucide-react';
 import type { PeopleById, TreeStats } from '../types/person';
 import type { Theme } from '../hooks/useTheme';
 import { SearchBar } from './SearchBar';
@@ -28,13 +28,15 @@ interface TopBarProps {
   onUndo: () => void;
   onRedo: () => void;
   onReset: () => void;
+  // Undefined while only "Moje drzewo" is open. On phones tabs have no right-click menu, so the more menu offers this instead.
+  onCloseAllTabs?: () => void;
   onGoHome: () => void;
   onChangeMe: () => void;
 }
 
 const buttonClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900';
 
-export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset }: TopBarProps) {
+export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onCloseAllTabs }: TopBarProps) {
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur sm:gap-4 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="flex min-w-0 items-center gap-2">
@@ -87,6 +89,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           { label: 'Ponów', icon: <Redo2 className="size-3.5" />, disabled: !canRedo, onSelect: onRedo },
           ...(notionPending !== undefined ? [{ label: refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion', icon: <RefreshCw className="size-3.5" />, disabled: refreshing, onSelect: onRefresh }] : []),
           { label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme },
+          { label: 'Zamknij wszystkie karty', icon: <X className="size-3.5" />, disabled: !onCloseAllTabs, onSelect: () => onCloseAllTabs?.() },
         ]} onChangeMe={onChangeMe} onClose={onReset} />
       </div>
     </header>
