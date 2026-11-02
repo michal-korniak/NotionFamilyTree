@@ -14,6 +14,7 @@ import { countOf } from '../lib/plural';
 import { GRAVES, PEOPLE } from '../lib/notion/notionMapping';
 import { buriedIn } from '../lib/graves';
 import { PhotoGallery } from './PhotoGallery';
+import { LinkedText } from './LinkedText';
 import { usePhotosContext } from '../hooks/usePhotoQueue';
 
 export interface PersonEditActions {
@@ -118,7 +119,7 @@ function PersonDetailsView({ person, people, graves, relationToMe, actions, onSe
         <Section title="Pochówek">
           <div className="space-y-2">
             {grave.cemetery && <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{grave.cemetery}</p>}
-            {grave.info && <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{grave.info}</p>}
+            {grave.info && <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300"><LinkedText text={grave.info} /></p>}
             {hasPhotos(person.graveId, GRAVES.photos) && <PhotoGallery personId={person.graveId} property={GRAVES.photos} />}
             {buriedWith.length > 0 && (
               <p className="text-xs text-zinc-500">
@@ -130,7 +131,7 @@ function PersonDetailsView({ person, people, graves, relationToMe, actions, onSe
         </Section>
       )}
 
-      {person.biography && <Section title="Biografia"><p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{person.biography}</p></Section>}
+      {person.biography && <Section title="Biografia"><p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300"><LinkedText text={person.biography} /></p></Section>}
     </>
   );
 }

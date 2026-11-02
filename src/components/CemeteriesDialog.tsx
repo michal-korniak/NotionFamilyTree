@@ -11,6 +11,7 @@ import { Avatar } from './Avatar';
 import { PhotoGallery } from './PhotoGallery';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CemeteryInput } from './CemeteryInput';
+import { LinkedText } from './LinkedText';
 
 interface CemeteriesDialogProps {
   people: PeopleById;
@@ -221,7 +222,7 @@ export function CemeteriesDialog({ people, graves, meId, withPhotos, onSelectPer
                             {!selecting && <button type="button" onClick={() => setEditing({ id, values: toValues(grave) })} aria-label={`Edytuj grób: ${title}`} title="Edytuj grób" className="grid size-6 shrink-0 place-items-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><Pencil className="size-3.5" /></button>}
                             {!selecting && <button type="button" onClick={() => (buried.length ? setRemoving({ id, title, buried }) : onRemoveGrave(id))} aria-label={`Usuń grób: ${title}`} title="Usuń grób" className="grid size-6 shrink-0 place-items-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"><Trash2 className="size-3.5" /></button>}
                           </div>
-                          {grave.info && <p className="mt-1 text-xs leading-relaxed whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">{grave.info}</p>}
+                          {grave.info && <p className="mt-1 text-xs leading-relaxed whitespace-pre-wrap text-zinc-600 dark:text-zinc-400"><LinkedText text={grave.info} /></p>}
                           {hasPhotos(id) && <div className="mt-2"><PhotoGallery personId={id} property={GRAVES.photos} /></div>}
                           <BuriedList buried={buried} onSelectPerson={selecting ? undefined : onSelectPerson} />
                         </li>
