@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Download, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus, X } from 'lucide-react';
+import { Download, FileDown, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus, X } from 'lucide-react';
 import type { PeopleById, TreeStats } from '../types/person';
 import type { Theme } from '../hooks/useTheme';
 import { SearchBar } from './SearchBar';
@@ -30,13 +30,14 @@ interface TopBarProps {
   onReset: () => void;
   // Undefined while only "Moje drzewo" is open. On phones tabs have no right-click menu, so the more menu offers this instead.
   onCloseAllTabs?: () => void;
+  onExportGedcom: () => void;
   onGoHome: () => void;
   onChangeMe: () => void;
 }
 
 const buttonClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900';
 
-export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onCloseAllTabs }: TopBarProps) {
+export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onCloseAllTabs, onExportGedcom }: TopBarProps) {
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur sm:gap-4 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="flex min-w-0 items-center gap-2">
@@ -90,7 +91,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           ...(notionPending !== undefined ? [{ label: refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion', icon: <RefreshCw className="size-3.5" />, disabled: refreshing, onSelect: onRefresh }] : []),
           { label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme },
           { label: 'Zamknij wszystkie karty', icon: <X className="size-3.5" />, disabled: !onCloseAllTabs, onSelect: () => onCloseAllTabs?.() },
-        ]} onChangeMe={onChangeMe} onClose={onReset} />
+        ]} onChangeMe={onChangeMe} onExportGedcom={onExportGedcom} onClose={onReset} />
       </div>
     </header>
   );
@@ -100,7 +101,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
 interface CompactMenuItem { label: string; icon: ReactNode; disabled?: boolean; onSelect: () => void }
 
 // On narrow screens the top bar has no room for undo/redo, refresh and the theme switch, so they move into this menu.
-function MoreMenu({ compactItems, onChangeMe, onClose }: { compactItems: CompactMenuItem[]; onChangeMe: () => void; onClose: () => void }) {
+function MoreMenu({ compactItems, onChangeMe, onExportGedcom, onClose }: { compactItems: CompactMenuItem[]; onChangeMe: () => void; onExportGedcom: () => void; onClose: () => void }) {
   const install = useInstallPrompt();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -135,6 +136,10 @@ function MoreMenu({ compactItems, onChangeMe, onClose }: { compactItems: Compact
           <button type="button" role="menuitem" onClick={choose(onChangeMe)} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
             <UserRound className="size-3.5" />
             Zmień, kim jestem…
+          </button>
+          <button type="button" role="menuitem" onClick={choose(onExportGedcom)} title="Plik do programów genealogicznych (MyHeritage, Ancestry, Gramps)" className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
+            <FileDown className="size-3.5" />
+            Pobierz GEDCOM
           </button>
           {install && (
             <button type="button" role="menuitem" onClick={choose(() => void install())} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>

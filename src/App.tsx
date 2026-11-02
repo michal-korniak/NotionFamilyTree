@@ -30,6 +30,7 @@ import { usePhotoCache } from './hooks/usePhotoCache';
 import { describeUnion, PHOTO_PROPERTIES, refreshNotionDatabase, type NotionImport, type NotionRefresh } from './lib/notion/notionMapping';
 import { fullPhotoUrl } from './lib/notion/notionPhotos';
 import { NotionClient } from './lib/notion/notionClient';
+import { toGedcom } from './lib/gedcom';
 import { unionKey, type Gender, type UnionDetails } from './types/person';
 
 const AUTO_REFRESH_MS = 5 * 60_000;
@@ -252,6 +253,18 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     if (failure) setRefreshError(failure);
   }, [applyRefresh]);
 
+  // The current tree as shown, unsaved changes included; couples carry their ending (divorce, death) from Notion.
+  const exportGedcom = useCallback(() => {
+    const unions = Object.fromEntries(Object.entries(tree.unions).map(([key, details]) => [key, { ...details, ending: notionLink?.unions[key]?.ending }]));
+    // The byte-order mark makes Windows genealogy programs read the file as UTF-8, so Polish letters survive.
+    const file = new Blob(['﻿' + toGedcom(people, unions)], { type: 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(file);
+    link.download = `drzewo-${new Date().toISOString().slice(0, 10)}.ged`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  }, [people, tree.unions, notionLink]);
+
   const handleReset = useCallback(() => {
     if (notionPending !== undefined || dirty) setCloseDialogOpen(true); else reset();
   }, [dirty, notionPending, reset]);
@@ -273,7 +286,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   return (
     <PhotosContext.Provider value={photosContext}>
     <div className="flex h-full flex-col">
-      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} onCloseAllTabs={view.tabs.length > 1 ? () => { closeTabs(view.tabs.map((tab) => tab.id), HOME_TAB_ID); close(); } : undefined} />
+      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} onExportGedcom={exportGedcom} onCloseAllTabs={view.tabs.length > 1 ? () => { closeTabs(view.tabs.map((tab) => tab.id), HOME_TAB_ID); close(); } : undefined} />
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => { if (!isPhoneLayout()) setTabMenu({ id, x, y }); }} />
       <main className="relative flex-1 overflow-hidden">
         <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { if (isPhoneLayout()) return; select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => { if (!isPhoneLayout()) setMenu({ x, y, personId: null }); }} />
