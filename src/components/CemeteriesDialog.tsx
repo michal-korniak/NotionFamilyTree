@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Church, Combine, Pencil, Search, Trash2, X } from 'lucide-react';
 import type { GraveDetails, PeopleById, Person } from '../types/person';
-import { buriedIn, cemeteryGroups, graveTitle } from '../lib/graves';
+import { buriedIn, cemeteryGroups, closenessTo, graveTitle } from '../lib/graves';
 import { formatLifeYears, isDeceased } from '../lib/dates';
 import { displayName } from '../lib/names';
 import { countOf } from '../lib/plural';
@@ -15,6 +15,8 @@ import { CemeteryInput } from './CemeteryInput';
 interface CemeteriesDialogProps {
   people: PeopleById;
   graves: Record<string, GraveDetails>;
+  // Cemeteries and graves are ranked by kinship to this person: the user's own family first.
+  meId: string | null;
   // False for a tree without Notion: there is nowhere to keep photos.
   withPhotos: boolean;
   onSelectPerson: (id: string) => void;
@@ -132,14 +134,14 @@ function MergePanel({ people, graves, ids, onMerge, onCancel }: { people: People
   );
 }
 
-export function CemeteriesDialog({ people, graves, withPhotos, onSelectPerson, onSaveGrave, onMerge, onRemoveGrave, onClose }: CemeteriesDialogProps) {
+export function CemeteriesDialog({ people, graves, meId, withPhotos, onSelectPerson, onSaveGrave, onMerge, onRemoveGrave, onClose }: CemeteriesDialogProps) {
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<{ id: string; values: GraveValues } | null>(null);
   // null: not merging; otherwise the graves ticked so far.
   const [selecting, setSelecting] = useState<string[] | null>(null);
   const [merging, setMerging] = useState<string[] | null>(null);
   const [removing, setRemoving] = useState<{ id: string; title: string; buried: Person[] } | null>(null);
-  const groups = useMemo(() => cemeteryGroups(people, graves), [people, graves]);
+  const groups = useMemo(() => cemeteryGroups(people, graves, closenessTo(people, meId)), [people, graves, meId]);
   const shown = useMemo(() => {
     const needle = normalize(query.trim());
     if (!needle) return groups;

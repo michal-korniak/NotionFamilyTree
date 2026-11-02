@@ -343,7 +343,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
           <p>Masz otwarty formularz z niezapisanymi zmianami. Zapisz go, aby trafił do Notion razem z resztą, albo odrzuć te zmiany.</p>
         </ConfirmDialog>
       )}
-      {cemeteriesOpen && <CemeteriesDialog people={people} graves={tree.graves} withPhotos={Boolean(tree.notion)} onSelectPerson={(id) => { setCemeteriesOpen(false); selectAndFocus(id); }} onSaveGrave={updateGrave} onMerge={mergeGraves} onRemoveGrave={removeGrave} onClose={() => setCemeteriesOpen(false)} />}
+      {cemeteriesOpen && <CemeteriesDialog people={people} graves={tree.graves} meId={meId} withPhotos={Boolean(tree.notion)} onSelectPerson={(id) => { setCemeteriesOpen(false); selectAndFocus(id); }} onSaveGrave={updateGrave} onMerge={mergeGraves} onRemoveGrave={removeGrave} onClose={() => setCemeteriesOpen(false)} />}
       {deleteCandidate && people.has(deleteCandidate) && (
         <ConfirmDialog title={`Usunąć: ${displayName(people.get(deleteCandidate)!)}?`} confirmLabel="Usuń" danger onConfirm={() => { commit(deletePerson(people, deleteCandidate)); if (selectedId === deleteCandidate) close(); setDeleteCandidate(null); }} onCancel={() => setDeleteCandidate(null)}>
           <p>Osoba i jej powiązania zostaną usunięte. Możesz cofnąć przez Ctrl+Z.</p>

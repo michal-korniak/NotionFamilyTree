@@ -4,7 +4,7 @@ import type { PersonDetails } from '../lib/treeEdits';
 import { isValidDateText, parseYear } from '../lib/dates';
 import { composeName, displayName, nameParts } from '../lib/names';
 import { GRAVES, PEOPLE } from '../lib/notion/notionMapping';
-import { buriedIn, cemeteryGroups, familyGraveIds, graveTitle, newGraveId } from '../lib/graves';
+import { buriedIn, cemeteryGroups, closenessTo, graveTitle, newGraveId } from '../lib/graves';
 import { PhotoGallery } from './PhotoGallery';
 import { usePhotoDraft } from '../hooks/usePhotoQueue';
 import { focusOnOpen, useOpenForm } from '../hooks/useOpenForm';
@@ -168,13 +168,8 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
 }
 
 function GraveField({ person, people, graves, graveId, isNewGrave, values, buriedWith, withPhotos, onChoose, onChange }: { person: Person; people: PeopleById; graves: Record<string, GraveDetails>; graveId: string; isNewGrave: boolean; values: GraveValues; buriedWith: Person[]; withPhotos: boolean; onChoose: (value: string) => void; onChange: (key: keyof GraveValues, value: string) => void }) {
-  const familyGraves = useMemo(() => familyGraveIds(people, person).filter((id) => graves[id]), [people, person, graves]);
-  // Graves of the closest family come first, under their own cemetery, as people are most often buried with them.
-  const groups = useMemo(() => {
-    const isFamily = (id: string) => familyGraves.includes(id);
-    const sorted = cemeteryGroups(people, graves).map((group) => ({ ...group, graves: [...group.graves].sort((a, b) => Number(isFamily(b.id)) - Number(isFamily(a.id))) }));
-    return sorted.sort((a, b) => Number(b.graves.some(({ id }) => isFamily(id))) - Number(a.graves.some(({ id }) => isFamily(id))));
-  }, [people, graves, familyGraves]);
+  // Ranked by kinship to the person being edited: they are most often buried with a spouse, parent or child.
+  const groups = useMemo(() => cemeteryGroups(people, graves, closenessTo(people, person.id)), [people, graves, person.id]);
   const label = (id: string, grave: GraveDetails) => graveTitle(grave, buriedIn(people, id));
   return (
     <fieldset className="space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
