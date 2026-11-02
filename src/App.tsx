@@ -30,6 +30,7 @@ import { usePhotoCache } from './hooks/usePhotoCache';
 import { describeUnion, photoOwnerPage, refreshNotionDatabase, type NotionImport, type NotionRefresh } from './lib/notion/notionMapping';
 import { CemeteriesDialog } from './components/CemeteriesDialog';
 import { useAppUpdate } from './hooks/useAppUpdate';
+import { changedForms } from './hooks/useOpenForm';
 import { fullPhotoUrl } from './lib/notion/notionPhotos';
 import { NotionClient } from './lib/notion/notionClient';
 import { toGedcom } from './lib/gedcom';
@@ -92,6 +93,9 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const [notionDialogOpen, setNotionDialogOpen] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [cemeteriesOpen, setCemeteriesOpen] = useState(false);
+  const [unsavedFormPrompt, setUnsavedFormPrompt] = useState(false);
+  // A form still open with changes would otherwise be left out of the save without a word.
+  const openNotionDialog = useCallback(() => { if (changedForms().length) setUnsavedFormPrompt(true); else setNotionDialogOpen(true); }, []);
   // A Notion tree needs the Groby database (found through Osoby.Grób) to keep graves; a tree from a file keeps them locally.
   const gravesEnabled = !notionLink || Boolean(notionLink.gravesDataSourceId);
   const describeSpouseUnion = useCallback((personId: string, spouseId: string) => describeUnion({ ...tree.unions[unionKey(personId, spouseId)], ending: notionLink?.unions[unionKey(personId, spouseId)]?.ending }), [tree.unions, notionLink]);
@@ -315,7 +319,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   return (
     <PhotosContext.Provider value={photosContext}>
     <div className="flex h-full flex-col">
-      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} onExportGedcom={exportGedcom} onShowCemeteries={() => setCemeteriesOpen(true)} onCloseAllTabs={view.tabs.length > 1 ? () => { closeTabs(view.tabs.map((tab) => tab.id), HOME_TAB_ID); close(); } : undefined} />
+      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={openNotionDialog} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} onExportGedcom={exportGedcom} onShowCemeteries={() => setCemeteriesOpen(true)} onCloseAllTabs={view.tabs.length > 1 ? () => { closeTabs(view.tabs.map((tab) => tab.id), HOME_TAB_ID); close(); } : undefined} />
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => { if (!isPhoneLayout()) setTabMenu({ id, x, y }); }} />
       <main className="relative flex-1 overflow-hidden">
         <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { if (isPhoneLayout()) return; select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => { if (!isPhoneLayout()) setMenu({ x, y, personId: null }); }} />
@@ -333,6 +337,11 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
           <span>Jest nowa wersja aplikacji. Wczyta się po zamknięciu formularza.</span>
           <button type="button" onClick={() => location.reload()} className="shrink-0 font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100">Odśwież teraz</button>
         </div>
+      )}
+      {unsavedFormPrompt && (
+        <ConfirmDialog title="Zapisać zmiany w formularzu?" confirmLabel="Zapisz i kontynuuj" secondary={{ label: 'Odrzuć zmiany', onSelect: () => { setUnsavedFormPrompt(false); changedForms().forEach((form) => form.discard()); setNotionDialogOpen(true); } }} onConfirm={() => { setUnsavedFormPrompt(false); if (changedForms().every((form) => form.save())) setNotionDialogOpen(true); }} onCancel={() => setUnsavedFormPrompt(false)}>
+          <p>Masz otwarty formularz z niezapisanymi zmianami. Zapisz go, aby trafił do Notion razem z resztą, albo odrzuć te zmiany.</p>
+        </ConfirmDialog>
       )}
       {cemeteriesOpen && <CemeteriesDialog people={people} graves={tree.graves} withPhotos={Boolean(tree.notion)} onSelectPerson={(id) => { setCemeteriesOpen(false); selectAndFocus(id); }} onSaveGrave={updateGrave} onMerge={mergeGraves} onRemoveGrave={removeGrave} onClose={() => setCemeteriesOpen(false)} />}
       {deleteCandidate && people.has(deleteCandidate) && (

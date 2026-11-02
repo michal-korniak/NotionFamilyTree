@@ -36,7 +36,6 @@ interface TopBarProps {
   onChangeMe: () => void;
 }
 
-const buttonClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900';
 
 export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onCloseAllTabs, onExportGedcom, onShowCemeteries }: TopBarProps) {
   return (
@@ -73,17 +72,17 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           </IconButton>
         </div>
         {notionPending !== undefined && (
-          <IconButton label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} onClick={onRefresh} disabled={refreshing}>
-            <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </IconButton>
-        )}
-        {notionPending !== undefined && (
-          <button type="button" onClick={onOpenNotion} className={`relative ${buttonClass}`} title={notionConflicts.length ? `Ktoś zmienił w Notion: ${notionConflicts.join(', ')}. Zapis wczyta aktualne dane i odrzuci niezapisane zmiany.` : notionPending ? `Zapisz w Notion: ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')}` : 'Notion jest aktualny'}>
-            <NotionIcon className="size-3.5" />
-            <span className="hidden lg:inline">Zapisz zmiany</span>
-            {notionConflicts.length > 0 && <span aria-label="Konflikt ze zmianami w Notion" className="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-full bg-red-600 text-[10px] leading-none font-bold text-white ring-2 ring-white dark:ring-zinc-950">!</span>}
-            <span aria-label={`Niewysłane zmiany: ${notionPending}`} className={`grid h-4 min-w-4 place-items-center rounded-full px-1 font-mono text-[10px] leading-none font-semibold tabular-nums ${notionPending > 0 ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>{notionPending}</span>
-          </button>
+          <div className="flex h-8 items-stretch rounded-md border border-zinc-200 dark:border-zinc-800">
+            <button type="button" onClick={onRefresh} disabled={refreshing} aria-label={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} title={refreshing ? 'Odświeżanie z Notion…' : 'Odśwież z Notion'} className="grid w-8 place-items-center rounded-l-md border-r border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-default dark:border-zinc-800 dark:hover:bg-zinc-900 dark:hover:text-zinc-100">
+              <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <button type="button" onClick={onOpenNotion} className="relative inline-flex items-center gap-1.5 rounded-r-md px-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900" title={notionConflicts.length ? `Ktoś zmienił w Notion: ${notionConflicts.join(', ')}. Zapis wczyta aktualne dane i odrzuci niezapisane zmiany.` : notionPending ? `Zapisz w Notion: ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')}` : 'Notion jest aktualny'}>
+              <NotionIcon className="size-3.5" />
+              <span className="hidden lg:inline">Zapisz zmiany</span>
+              {notionConflicts.length > 0 && <span aria-label="Konflikt ze zmianami w Notion" className="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-full bg-red-600 text-[10px] leading-none font-bold text-white ring-2 ring-white dark:ring-zinc-950">!</span>}
+              <span aria-label={`Niewysłane zmiany: ${notionPending}`} className={`grid h-4 min-w-4 place-items-center rounded-full px-1 font-mono text-[10px] leading-none font-semibold tabular-nums ${notionPending > 0 ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>{notionPending}</span>
+            </button>
+          </div>
         )}
         <MoreMenu compactItems={[
           { label: 'Dodaj osobę', icon: <UserPlus className="size-3.5" />, onSelect: onAddPerson },

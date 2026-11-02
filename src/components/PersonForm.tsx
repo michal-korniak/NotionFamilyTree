@@ -7,6 +7,7 @@ import { GRAVES, PEOPLE } from '../lib/notion/notionMapping';
 import { buriedIn, cemeteryGroups, familyGraveIds, graveTitle, newGraveId } from '../lib/graves';
 import { PhotoGallery } from './PhotoGallery';
 import { usePhotoDraft } from '../hooks/usePhotoQueue';
+import { focusOnOpen, useOpenForm } from '../hooks/useOpenForm';
 import { CemeteryInput } from './CemeteryInput';
 
 interface PersonFormProps {
@@ -98,15 +99,19 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
     setGraveValues(toGraveValues(graves[id]));
   };
 
-  const submit = (event?: FormEvent) => {
+  const [initial] = useState(() => JSON.stringify({ values, graveId, graveValues }));
+  useOpenForm({ isDirty: () => isNew || photoDraft.hasChanges() || JSON.stringify({ values, graveId, graveValues }) !== initial, save: () => submit(), discard: onCancel });
+
+  const submit = (event?: FormEvent): boolean => {
     event?.preventDefault();
     const found = validate(values);
     setErrors(found);
-    if (Object.keys(found).length) return;
+    if (Object.keys(found).length) return false;
     const details: PersonDetails = { name: fullName, givenNames: values.givenNames.trim(), birthSurname: values.birthSurname.trim(), marriedSurname: values.marriedSurname.trim(), gender: values.gender ?? 'U', birthDate: optional(values.birthDate), deathDate: optional(values.deathDate), birthPlace: optional(values.birthPlace), deathPlace: optional(values.deathPlace), graveId: graveId || undefined, biography: optional(values.biography) };
     const grave = graveId ? { id: graveId, details: { name: graveTitle(undefined, [...buriedWith, { ...person, ...details }]), cemetery: optional(graveValues.cemetery), info: optional(graveValues.info) } } : undefined;
     photoDraft.keep(photoOwners);
     onSave(details, grave);
+    return true;
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -117,7 +122,7 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
   return (
     <form onSubmit={submit} onKeyDown={handleKeyDown} className="space-y-4" noValidate>
       <Field label="Imiona" error={errors.givenNames}>
-        <input autoFocus value={values.givenNames} onChange={(e) => set('givenNames', e.target.value)} aria-invalid={Boolean(errors.givenNames)} className={inputClass} />
+        <input autoFocus={focusOnOpen()} value={values.givenNames} onChange={(e) => set('givenNames', e.target.value)} aria-invalid={Boolean(errors.givenNames)} className={inputClass} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Nazwisko">

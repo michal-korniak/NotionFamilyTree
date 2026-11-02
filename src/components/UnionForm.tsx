@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import type { UnionDetails } from '../types/person';
+import { focusOnOpen, useOpenForm } from '../hooks/useOpenForm';
 
 // The options of Notion's "Rodzaj" select in the Związki database.
 const UNION_KINDS = ['Małżeństwo', 'Narzeczeństwo', 'Nieformalny'] as const;
@@ -22,9 +23,13 @@ export function UnionForm({ initial, onSave, onCancel }: UnionFormProps) {
   const [notes, setNotes] = useState(initial.notes ?? '');
   const kinds = initial.kind && !UNION_KINDS.includes(initial.kind as (typeof UNION_KINDS)[number]) ? [...UNION_KINDS, initial.kind] : [...UNION_KINDS];
 
+  const details = { kind: optional(kind), date: optional(date), place: optional(place), notes: optional(notes) };
+  const save = () => { onSave(details); return true; };
+  useOpenForm({ isDirty: () => (['kind', 'date', 'place', 'notes'] as const).some((field) => (details[field] ?? '') !== (field === 'kind' ? initial.kind ?? UNION_KINDS[0] : initial[field] ?? '')), save, discard: onCancel });
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    onSave({ kind: optional(kind), date: optional(date), place: optional(place), notes: optional(notes) });
+    save();
   };
 
   return (
@@ -38,7 +43,7 @@ export function UnionForm({ initial, onSave, onCancel }: UnionFormProps) {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <label className="block"><span className={labelClass}>Data</span><input autoFocus value={date} onChange={(e) => setDate(e.target.value)} placeholder="np. 12 maja 1950" className={inputClass} /></label>
+        <label className="block"><span className={labelClass}>Data</span><input autoFocus={focusOnOpen()} value={date} onChange={(e) => setDate(e.target.value)} placeholder="np. 12 maja 1950" className={inputClass} /></label>
         <label className="block"><span className={labelClass}>Miejsce</span><input value={place} onChange={(e) => setPlace(e.target.value)} className={inputClass} /></label>
       </div>
       <label className="block"><span className={labelClass}>Notatki</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={`${inputClass} resize-y`} /></label>

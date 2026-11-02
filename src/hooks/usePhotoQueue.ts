@@ -79,7 +79,8 @@ export function usePhotoDraft(owners: readonly string[]) {
   useEffect(() => () => { if (!kept.current) dropAddedFor(() => true); }, [dropAddedFor]);
 
   const keep = useCallback((finalOwners: readonly string[]) => { kept.current = true; dropAddedFor((owner) => !finalOwners.includes(owner)); }, [dropAddedFor]);
-  return { keep };
+  const hasChanges = useCallback(() => latest.current.ops.some((op) => !before.current!.has(op.id) && touched.current.has(op.personId)), []);
+  return { keep, hasChanges };
 }
 
 export function usePhotosContext(): PhotosContextValue {

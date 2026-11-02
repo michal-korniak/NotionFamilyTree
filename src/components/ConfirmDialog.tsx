@@ -7,12 +7,14 @@ interface ConfirmDialogProps {
   children: ReactNode;
   confirmLabel: string;
   danger?: boolean;
+  // A third choice between Anuluj and the main action, e.g. "Odrzuć zmiany".
+  secondary?: { label: string; onSelect: () => void };
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 // Rendered into <body>: opened from inside the details panel, whose slide-in transform would otherwise confine a fixed overlay to the panel.
-export function ConfirmDialog({ title, children, confirmLabel, danger = false, onConfirm, onCancel }: ConfirmDialogProps) {
+export function ConfirmDialog({ title, children, confirmLabel, danger = false, secondary, onConfirm, onCancel }: ConfirmDialogProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel(); };
     window.addEventListener('keydown', onKeyDown);
@@ -29,8 +31,9 @@ export function ConfirmDialog({ title, children, confirmLabel, danger = false, o
             <div className="mt-1.5 space-y-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">{children}</div>
           </div>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button type="button" autoFocus onClick={onCancel} className="h-8 rounded-md px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">Anuluj</button>
+          {secondary && <button type="button" onClick={secondary.onSelect} className="h-8 rounded-md border border-zinc-200 px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{secondary.label}</button>}
           <button type="button" onClick={onConfirm} className={`h-8 rounded-md px-3 text-xs font-medium text-white ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-zinc-900 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'}`}>{confirmLabel}</button>
         </div>
       </div>
