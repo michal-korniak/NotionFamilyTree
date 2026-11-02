@@ -16,6 +16,8 @@ interface TopBarProps {
   canUndo: boolean;
   canRedo: boolean;
   notionPending?: number;
+  // People or couples with unsaved changes that someone has also changed in Notion since the last sync.
+  notionConflicts?: string[];
   refreshing: boolean;
   onRefresh: () => void;
   onOpenNotion: () => void;
@@ -31,7 +33,7 @@ interface TopBarProps {
 
 const buttonClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900';
 
-export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset }: TopBarProps) {
+export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset }: TopBarProps) {
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur sm:gap-4 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="flex min-w-0 items-center gap-2">
@@ -71,9 +73,10 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
           )}
         </div>
         {notionPending !== undefined && (
-          <button type="button" onClick={onOpenNotion} className={`relative ${buttonClass}`} title={notionPending ? `Zapisz w Notion: ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')}` : 'Notion jest aktualny'}>
+          <button type="button" onClick={onOpenNotion} className={`relative ${buttonClass}`} title={notionConflicts.length ? `Ktoś zmienił w Notion: ${notionConflicts.join(', ')}. Zapis wczyta aktualne dane i odrzuci niezapisane zmiany.` : notionPending ? `Zapisz w Notion: ${countOf(notionPending, 'zmiana', 'zmiany', 'zmian')}` : 'Notion jest aktualny'}>
             <NotionIcon className="size-3.5" />
             <span className="hidden lg:inline">Zapisz zmiany</span>
+            {notionConflicts.length > 0 && <span aria-label="Konflikt ze zmianami w Notion" className="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-full bg-red-600 text-[10px] leading-none font-bold text-white ring-2 ring-white dark:ring-zinc-950">!</span>}
             <span aria-label={`Niewysłane zmiany: ${notionPending}`} className={`grid h-4 min-w-4 place-items-center rounded-full px-1 font-mono text-[10px] leading-none font-semibold tabular-nums ${notionPending > 0 ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>{notionPending}</span>
           </button>
         )}

@@ -217,11 +217,12 @@ function unionWarnings({ skipped, duplicates }: { skipped: number; duplicates: n
 const EDIT_TIME_MARGIN_MS = 2 * 60_000;
 
 export interface NotionRefresh extends NotionImport {
-  changedPeople: number;
-  changedUnions: number;
+  // What differs from the last sync: people and couples (by union key) edited, added or removed in Notion, and people whose photos changed.
+  changedPersonIds: string[];
+  removedPersonIds: string[];
+  changedUnionKeys: string[];
+  removedUnionKeys: string[];
   changedPhotos: number;
-  removedPeople: number;
-  removedUnions: number;
 }
 
 // Starts from what Notion had at the last sync (link.baseline and link.unions) and reads only the pages edited since then, plus a title-only
@@ -230,7 +231,7 @@ export interface NotionRefresh extends NotionImport {
 export async function refreshNotionDatabase(token: string, link: NotionLink, onProgress?: (message: string) => void): Promise<NotionRefresh> {
   if (link.fieldsVersion !== NOTION_FIELDS_VERSION) {
     const full = await importNotionDatabase(token, link.databaseId, onProgress);
-    return { ...full, changedPeople: full.records.length, changedUnions: 0, changedPhotos: 0, removedPeople: 0, removedUnions: 0 };
+    return { ...full, changedPersonIds: full.records.map((record) => record.id), removedPersonIds: [], changedUnionKeys: Object.keys(full.link.unions), removedUnionKeys: [], changedPhotos: 0 };
   }
   const client = new NotionClient(token);
   const startedAt = new Date().toISOString();
@@ -279,10 +280,10 @@ export async function refreshNotionDatabase(token: string, link: NotionLink, onP
 
   const changedUnionPageIds = new Set(changedUnionPages.map((page) => page.id));
   const unions: Record<string, UnionRecord> = {};
-  let removedUnions = 0;
+  const removedUnionKeys: string[] = [];
   for (const [key, union] of Object.entries(link.unions)) {
     const [a, b] = key.split('|') as [string, string];
-    if (!liveUnionPages.has(union.pageId) || removedIds.has(a) || removedIds.has(b)) { removedUnions++; continue; }
+    if (!liveUnionPages.has(union.pageId) || removedIds.has(a) || removedIds.has(b)) { removedUnionKeys.push(key); continue; }
     if (!changedUnionPageIds.has(union.pageId)) unions[key] = union;
   }
   const unionCounts = await addUnions(client, changedUnionPages, toIds, unions);
@@ -297,17 +298,17 @@ export async function refreshNotionDatabase(token: string, link: NotionLink, onP
   for (const record of changedRecords.values()) records.push({ ...record, spouses: [...(spouses.get(record.id) ?? [])] });
 
   const baseline = new Map(link.baseline.map((person) => [person.id, person]));
-  const changedPeople = [...changedRecords.values()].filter((record) => { const base = baseline.get(record.id); return !base || !sameRecord(record, base); }).length;
-  const changedUnions = Object.entries(unions).filter(([key, union]) => !sameUnion(union, link.unions[key])).length;
+  const changedPersonIds = [...changedRecords.values()].filter((record) => { const base = baseline.get(record.id); return !base || !sameRecord(record, base); }).map((record) => record.id);
+  const changedUnionKeys = Object.keys(unions).filter((key) => !sameUnion(unions[key]!, link.unions[key]));
   return {
     records,
     warnings: unionWarnings(unionCounts),
     link: { databaseId: link.databaseId, dataSourceId: link.dataSourceId, unionsDataSourceId: link.unionsDataSourceId, title: link.title, pageIds, externalIds, unions, syncedAt: startedAt, fieldsVersion: NOTION_FIELDS_VERSION, photos },
-    changedPeople,
-    changedUnions,
+    changedPersonIds,
+    changedUnionKeys,
     changedPhotos,
-    removedPeople: removedIds.size,
-    removedUnions,
+    removedPersonIds: [...removedIds],
+    removedUnionKeys,
   };
 }
 

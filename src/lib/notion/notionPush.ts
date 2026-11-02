@@ -105,6 +105,25 @@ export function diffNotion(link: NotionLink, current: PeopleById, unions: Record
   ];
 }
 
+export interface NotionEdits {
+  changedPersonIds: string[];
+  removedPersonIds: string[];
+  changedUnionKeys: string[];
+  removedUnionKeys: string[];
+}
+
+// Local changes to a person or couple that someone else changed or removed in Notion since the last sync. New people cannot clash, and
+// photo changes are merged with what Notion has when they are saved.
+export function conflictingChanges(changes: NotionChange[], notion: NotionEdits): NotionChange[] {
+  const people = new Set([...notion.changedPersonIds, ...notion.removedPersonIds]);
+  const couples = new Set([...notion.changedUnionKeys, ...notion.removedUnionKeys]);
+  return changes.filter((change) => {
+    if (change.kind === 'restore' || change.kind === 'update' || change.kind === 'trash') return people.has(change.key);
+    if (change.kind.startsWith('union-')) return couples.has(change.key.replace(/:details$/, ''));
+    return false;
+  });
+}
+
 // A renamed couple's title follows a person's name change and goes away when that change is undone, so it has no undo of its own.
 export function canRevert(change: NotionChange): boolean {
   return change.kind !== 'union-rename';
@@ -210,7 +229,8 @@ export async function pushToNotion(token: string, link: NotionLink, current: Peo
   const total = p.created.length * 2 + p.restored.length * 2 + p.updated.length + p.unionsCreated.length + p.unionsRenamed.length + p.unionsUpdated.length + p.unionsTrashed.length + p.trashed.length + photoChangeGroups.length;
   let applied = 0;
   const step = () => onProgress(++applied, total);
-  const result = (error?: string): PushResult => ({ link: { ...link, pageIds, externalIds, unions, photos, baseline: [...baseline.values()], syncedAt: new Date().toISOString() }, applied, error });
+  // syncedAt stays put: only a refresh may move it, or edits others made since the last refresh would fall outside its window.
+  const result = (error?: string): PushResult => ({ link: { ...link, pageIds, externalIds, unions, photos, baseline: [...baseline.values()] }, applied, error });
   const setSpouses = (id: string, update: (spouses: string[]) => string[]) => { const base = baseline.get(id); if (base) baseline.set(id, { ...base, spouses: update(base.spouses) }); };
 
   try {

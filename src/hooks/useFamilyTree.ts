@@ -61,10 +61,11 @@ export function useFamilyTree() {
   }, [tree, dirty]);
 
   // The Notion baseline is taken from the parsed people (after links are made two-way), so the first diff against it is empty.
-  const loadImported = useCallback((records: unknown[], sourceName: string, warnings: string[], notion?: Omit<NotionLink, 'baseline'>): string | null => {
+  // keepView reloads the same tree (a refresh from Notion) without remounting the explorer, so the open tab and person stay as they are.
+  const loadImported = useCallback((records: unknown[], sourceName: string, warnings: string[], notion?: Omit<NotionLink, 'baseline'>, keepView = false): string | null => {
     const result = parseFamilyData(records);
     if (!result.ok) return result.error;
-    setState({ ...emptyState, tree: toTree(result.people, sourceName, notion ? { ...notion, baseline: result.people } : undefined) });
+    setState((s) => { const tree = toTree(result.people, sourceName, notion ? { ...notion, baseline: result.people } : undefined); return { ...emptyState, tree: keepView && s.tree ? { ...tree, loadId: s.tree.loadId } : tree }; });
     setWarnings([...warnings, ...result.warnings]);
     return null;
   }, []);

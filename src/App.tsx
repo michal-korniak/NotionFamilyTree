@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFamilyTree, type FamilyTreeController } from './hooks/useFamilyTree';
 import { useTheme, type Theme } from './hooks/useTheme';
 import { computeLayout } from './lib/layout';
@@ -24,13 +24,16 @@ import { defaultRoot, familyMembers, hiddenRelativeCounts, isPhoneLayout, restri
 import { generationDepth } from './lib/stats';
 import { NotionPushDialog } from './components/NotionPushDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
-import { diffNotion, photoChanges, revertChange, type NotionChange } from './lib/notion/notionPush';
+import { conflictingChanges, diffNotion, photoChanges, revertChange, type NotionChange, type NotionEdits } from './lib/notion/notionPush';
 import { PhotosContext, usePhotoQueue } from './hooks/usePhotoQueue';
 import { usePhotoCache } from './hooks/usePhotoCache';
-import { describeUnion, PHOTO_PROPERTIES, refreshNotionDatabase, type NotionImport } from './lib/notion/notionMapping';
+import { describeUnion, PHOTO_PROPERTIES, refreshNotionDatabase, type NotionImport, type NotionRefresh } from './lib/notion/notionMapping';
 import { fullPhotoUrl } from './lib/notion/notionPhotos';
 import { NotionClient } from './lib/notion/notionClient';
 import { unionKey, type Gender, type UnionDetails } from './types/person';
+
+const AUTO_REFRESH_MS = 5 * 60_000;
+const AUTO_REFRESH_CHECK_MS = 30_000;
 
 interface ExplorerProps {
   controller: FamilyTreeController & { tree: NonNullable<FamilyTreeController['tree']> };
@@ -102,23 +105,57 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
-  const refreshFromNotion = useCallback(async () => {
+  // With nothing new in Notion only the sync time moves on, so local edits and the undo history survive; otherwise the tree is reloaded
+  // in place, keeping the open tab and person.
+  const applyRefresh = useCallback((result: NotionRefresh, { warnings: extraWarnings = [], discardLocal = false }: { warnings?: string[]; discardLocal?: boolean } = {}): string | null => {
+    if (!tree.notion) return null;
+    const changed = result.changedPersonIds.length || result.removedPersonIds.length || result.changedUnionKeys.length || result.removedUnionKeys.length || result.changedPhotos;
+    if (!changed && !extraWarnings.length && !discardLocal) { controller.setNotionLink({ ...tree.notion, syncedAt: result.link.syncedAt }); return null; }
+    setNotionEdits(null);
+    return controller.loadImported(result.records, result.link.title, [...extraWarnings, ...result.warnings], result.link, true);
+  }, [tree.notion, controller]);
+  const refreshFromNotion = useCallback(async ({ silent = false, discardLocal = false } = {}) => {
     if (!tree.notion) return;
     const token = notionSettings.token();
-    if (!token) { setRefreshError('Brak zapisanego tokenu Notion. Podaj go w oknie „Zapisz zmiany”.'); return; }
+    if (!token) { if (!silent) setRefreshError('Brak zapisanego tokenu Notion. Podaj go w oknie „Zapisz zmiany”.'); return; }
     setRefreshing(true);
     try {
-      const result = await refreshNotionDatabase(token, tree.notion);
-      // With nothing new in Notion only the sync time moves on, so local edits and the undo history survive the refresh.
-      if (!result.changedPeople && !result.changedUnions && !result.changedPhotos && !result.removedPeople && !result.removedUnions) { controller.setNotionLink({ ...tree.notion, syncedAt: result.link.syncedAt }); return; }
-      const failure = controller.loadImported(result.records, result.link.title, result.warnings, result.link);
-      if (failure) setRefreshError(failure);
+      const failure = applyRefresh(await refreshNotionDatabase(token, tree.notion), { discardLocal });
+      if (failure && !silent) setRefreshError(failure);
     } catch (error) {
-      setRefreshError(error instanceof Error ? error.message : String(error));
+      if (!silent) setRefreshError(error instanceof Error ? error.message : String(error));
     } finally {
       setRefreshing(false);
     }
-  }, [tree.notion, controller]);
+  }, [tree.notion, applyRefresh]);
+
+  // What Notion changed since the last sync, as last seen by a background check made while there were unsaved changes; any overlap with
+  // those changes marks the save button. Recomputed from the current changes, so undoing the clashing one clears the mark.
+  const [notionEdits, setNotionEdits] = useState<NotionEdits | null>(null);
+  const notionConflicts = useMemo(() => (tree.notion && notionEdits ? [...new Set(conflictingChanges(diffNotion(tree.notion, people, tree.unions), notionEdits).map((change) => change.label))] : []), [tree.notion, notionEdits, people, tree.unions]);
+  const checkNotion = useCallback(async () => {
+    const token = notionSettings.token();
+    if (!tree.notion || !token) return;
+    try { setNotionEdits(await refreshNotionDatabase(token, tree.notion)); } catch { /* the next check, or the save itself, tries again */ }
+  }, [tree.notion]);
+  useEffect(() => { if (!notionPending) setNotionEdits(null); }, [notionPending]);
+
+  // Pulls others' changes from Notion in the background and never saves. With unsaved changes a reload would drop them, so it only checks
+  // whether Notion changed the same people; the save itself checks again before writing anything.
+  const lastRefresh = useRef(Date.now());
+  const periodicRefresh = useRef<() => void>(() => undefined);
+  periodicRefresh.current = () => {
+    if (refreshing || notionDialogOpen || document.visibilityState !== 'visible' || Date.now() - lastRefresh.current < AUTO_REFRESH_MS) return;
+    lastRefresh.current = Date.now();
+    if (notionPending) void checkNotion(); else void refreshFromNotion({ silent: true });
+  };
+  useEffect(() => {
+    if (!tree.notion) return;
+    const timer = window.setInterval(() => periodicRefresh.current(), AUTO_REFRESH_CHECK_MS);
+    const onVisible = () => periodicRefresh.current();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [tree.notion !== undefined]);
 
   useUndoShortcuts(undo, redo);
 
@@ -209,6 +246,13 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
     for (const [key, details] of Object.entries(reverted.unions)) if (details !== tree.unions[key]) updateUnion(key, details);
   }, [tree.notion, tree.unions, people, photos, commit, updateUnion]);
 
+  const reloadAfterConflict = useCallback((notion: NotionRefresh, conflicts: NotionChange[]) => {
+    setNotionDialogOpen(false);
+    const names = [...new Set(conflicts.map((change) => change.label))].join(', ');
+    const failure = applyRefresh(notion, { discardLocal: true, warnings: [`Od ostatniej synchronizacji ktoś zmienił w Notion: ${names}. Wczytano aktualne dane z Notion, a niezapisane zmiany zostały odrzucone (zdjęcia czekają dalej) — wprowadź je ponownie.`] });
+    if (failure) setRefreshError(failure);
+  }, [applyRefresh]);
+
   const handleReset = useCallback(() => {
     if (notionPending !== undefined || dirty) setCloseDialogOpen(true); else reset();
   }, [dirty, notionPending, reset]);
@@ -230,7 +274,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
   return (
     <PhotosContext.Provider value={photosContext}>
     <div className="flex h-full flex-col">
-      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} />
+      <TopBar people={people} stats={stats} sourceName={tree.sourceName} theme={theme} canUndo={canUndo} canRedo={canRedo} notionPending={notionPending} notionConflicts={notionConflicts} refreshing={refreshing} onRefresh={() => (notionPending ? setRefreshConfirmOpen(true) : void refreshFromNotion())} onOpenNotion={() => setNotionDialogOpen(true)} onGoHome={goHome} onChangeMe={() => setChangingMe(true)} onToggleTheme={onToggleTheme} onSelect={selectAndFocus} onAddPerson={addPerson} onUndo={undo} onRedo={redo} onReset={handleReset} />
       <TabBar tabs={tabInfos} activeId={activeTab.id} onActivate={(id) => { activateTab(id); close(); }} onClose={closeTab} onMenu={(id, x, y) => { if (!isPhoneLayout()) setTabMenu({ id, x, y }); }} />
       <main className="relative flex-1 overflow-hidden">
         <FamilyGraph people={visible} layout={layout} selectedId={activeSelectedId && visible.has(activeSelectedId) ? activeSelectedId : null} focusRequest={focusRequest} theme={theme} viewKey={viewKey} hiddenRelatives={connection ? undefined : hiddenRelatives} unionKindOf={unionKindOf} onSelect={select} onOpenFamily={selectAndFocus} onNodeMenu={(personId, x, y) => { if (isPhoneLayout()) return; select(personId); setMenu({ x, y, personId }); }} onPaneMenu={(x, y) => { if (!isPhoneLayout()) setMenu({ x, y, personId: null }); }} />
@@ -249,7 +293,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
         </ConfirmDialog>
       )}
       {refreshConfirmOpen && (
-        <ConfirmDialog title="Odświeżyć z Notion?" confirmLabel="Odrzuć zmiany i odśwież" danger onConfirm={() => { setRefreshConfirmOpen(false); void photos.clear(); void refreshFromNotion(); }} onCancel={() => setRefreshConfirmOpen(false)}>
+        <ConfirmDialog title="Odświeżyć z Notion?" confirmLabel="Odrzuć zmiany i odśwież" danger onConfirm={() => { setRefreshConfirmOpen(false); void photos.clear(); void refreshFromNotion({ discardLocal: true }); }} onCancel={() => setRefreshConfirmOpen(false)}>
           <p>Masz niewysłane zmiany ({notionPending}). Odświeżenie wczyta dane z Notion od nowa i te zmiany zostaną utracone. Aby je zachować, najpierw użyj „Zapisz zmiany”.</p>
         </ConfirmDialog>
       )}
@@ -264,7 +308,7 @@ function Explorer({ controller, theme, onToggleTheme }: ExplorerProps) {
           {tree.notion ? <p>Lokalna kopia „{tree.sourceName}” zostanie usunięta z tej przeglądarki. Dane w Notion pozostaną bez zmian i w każdej chwili możesz je zaimportować ponownie.</p> : <p>Drzewo zostanie usunięte z tej przeglądarki.</p>}
         </ConfirmDialog>
       )}
-      {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} photoOps={photos.ops} onPhotosSaved={(ids) => void photos.drop(ids)} onRevert={revertNotionChange} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
+      {notionDialogOpen && tree.notion && <NotionPushDialog link={tree.notion} people={people} unions={tree.unions} notionEdits={notionEdits} photoOps={photos.ops} onPhotosSaved={(ids) => void photos.drop(ids)} onRevert={revertNotionChange} onConflict={reloadAfterConflict} onPushed={setNotionLink} onClose={() => setNotionDialogOpen(false)} />}
     </div>
     </PhotosContext.Provider>
   );

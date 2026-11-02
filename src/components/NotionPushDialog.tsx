@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, RotateCcw, X } from 'lucide-react';
 import type { NotionLink, PeopleById, UnionDetails } from '../types/person';
-import { canRevert, diffNotion, photoChanges, pushToNotion, type NotionChange } from '../lib/notion/notionPush';
+import { canRevert, conflictingChanges, diffNotion, photoChanges, pushToNotion, type NotionChange, type NotionEdits } from '../lib/notion/notionPush';
+import { refreshNotionDatabase, type NotionRefresh } from '../lib/notion/notionMapping';
 import type { PhotoOp } from '../lib/photoQueue';
 import { notionSettings } from '../lib/notion/notionSettings';
 import { NotionIcon } from './NotionIcon';
@@ -15,6 +16,10 @@ interface NotionPushDialogProps {
   onPhotosSaved: (opIds: string[]) => void;
   // Puts one change back to what Notion has, so it is not saved.
   onRevert: (change: NotionChange) => void;
+  // Someone changed in Notion a person or couple that also has unsaved changes here; nothing was saved.
+  onConflict: (notion: NotionRefresh, conflicts: NotionChange[]) => void;
+  // What a background check last saw changed in Notion; changes that clash with it are marked before saving.
+  notionEdits?: NotionEdits | null;
   onPushed: (link: NotionLink) => void;
   onClose: () => void;
 }
@@ -31,13 +36,14 @@ const kindLabel: Record<NotionChange['kind'], { label: string; className: string
   photos: { label: 'Zdjęcia', className: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
 };
 
-type Phase = { kind: 'review' } | { kind: 'pushing'; done: number; total: number } | { kind: 'done'; saved: number } | { kind: 'failed'; error: string };
+type Phase = { kind: 'review' } | { kind: 'checking' } | { kind: 'pushing'; done: number; total: number } | { kind: 'done'; saved: number } | { kind: 'failed'; error: string };
 
-export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved, onRevert, onPushed, onClose }: NotionPushDialogProps) {
+export function NotionPushDialog({ link, people, unions, notionEdits, photoOps, onPhotosSaved, onRevert, onConflict, onPushed, onClose }: NotionPushDialogProps) {
   const changes = useMemo(() => [...diffNotion(link, people, unions), ...photoChanges(photoOps, people)], [link, people, unions, photoOps]);
+  const clashing = useMemo(() => new Set(notionEdits ? conflictingChanges(changes, notionEdits) : []), [changes, notionEdits]);
   const [token, setToken] = useState(notionSettings.token);
   const [phase, setPhase] = useState<Phase>({ kind: 'review' });
-  const busy = phase.kind === 'pushing';
+  const busy = phase.kind === 'pushing' || phase.kind === 'checking';
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose(); };
@@ -49,6 +55,16 @@ export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved
     if (!token.trim()) return;
     notionSettings.save(token.trim(), notionSettings.databaseInput());
     const saved = changes.length;
+    setPhase({ kind: 'checking' });
+    let notion: NotionRefresh;
+    try {
+      notion = await refreshNotionDatabase(token.trim(), link);
+    } catch (error) {
+      setPhase({ kind: 'failed', error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    const conflicts = conflictingChanges(changes, notion);
+    if (conflicts.length) { onConflict(notion, conflicts); return; }
     setPhase({ kind: 'pushing', done: 0, total: 1 });
     const result = await pushToNotion(token.trim(), link, people, unions, photoOps, (done, total) => setPhase({ kind: 'pushing', done, total }), onPhotosSaved);
     onPushed(result.link);
@@ -62,7 +78,6 @@ export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved
           <NotionIcon className="size-5" />
           <div className="min-w-0 flex-1">
             <h2 id="notion-push-title" className="text-sm font-semibold">Zapisz zmiany w Notion</h2>
-            <p className="truncate text-xs text-zinc-500">Ostatnia synchronizacja {new Date(link.syncedAt).toLocaleString('pl-PL')}</p>
           </div>
           <button type="button" onClick={onClose} disabled={busy} aria-label="Zamknij" className="grid size-7 place-items-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><X className="size-4" /></button>
         </div>
@@ -78,11 +93,13 @@ export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved
             <p className="py-6 text-center text-sm text-zinc-500">Brak zmian do zapisania.</p>
           ) : (
             <>
+              {clashing.size > 0 && <p role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"><AlertCircle className="mt-px size-3.5 shrink-0" /><span>Ktoś zmienił w Notion osoby oznaczone „!”. Zapis wczyta aktualne dane z Notion i odrzuci niezapisane zmiany — cofnij oznaczone zmiany, aby zapisać pozostałe.</span></p>}
               <p className="mb-2 text-xs text-zinc-500">{countOf(changes.length, 'zmiana', 'zmiany', 'zmian')} od ostatniej synchronizacji:</p>
               <ul className="divide-y divide-zinc-100 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                 {changes.map((change) => (
                   <li key={`${change.kind}:${change.key}`} className="flex items-center gap-2 px-3 py-2 text-sm">
                     <span className={`shrink-0 rounded px-1.5 py-px text-[10px] font-medium ${kindLabel[change.kind].className}`}>{kindLabel[change.kind].label}</span>
+                    {clashing.has(change) && <span title="Zmienione też w Notion" className="grid size-4 shrink-0 place-items-center rounded-full bg-red-600 text-[10px] font-bold text-white">!</span>}
                     <span className="min-w-0 flex-1 truncate">{change.label}</span>
                     {change.detail && <span className="max-w-[45%] shrink-0 truncate text-[11px] text-zinc-400" title={change.detail}>{change.detail}</span>}
                     {canRevert(change) && <button type="button" onClick={() => onRevert(change)} disabled={busy} aria-label={`Cofnij zmianę: ${change.label}`} title="Cofnij tę zmianę" className="grid size-6 shrink-0 place-items-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><RotateCcw className="size-3.5" /></button>}
@@ -112,7 +129,7 @@ export function NotionPushDialog({ link, people, unions, photoOps, onPhotosSaved
             <>
               <button type="button" onClick={onClose} disabled={busy} className="h-8 rounded-md px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800">Anuluj</button>
               <button type="button" onClick={() => void push()} disabled={busy || !token.trim()} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300">
-                {phase.kind === 'pushing' ? <><Loader2 className="size-3.5 animate-spin" />Zapisywanie… {Math.round((phase.done / Math.max(phase.total, 1)) * 100)}%</> : phase.kind === 'failed' ? 'Ponów' : `Zapisz zmiany (${changes.length})`}
+                {phase.kind === 'checking' ? <><Loader2 className="size-3.5 animate-spin" />Sprawdzanie zmian w Notion…</> : phase.kind === 'pushing' ? <><Loader2 className="size-3.5 animate-spin" />Zapisywanie… {Math.round((phase.done / Math.max(phase.total, 1)) * 100)}%</> : phase.kind === 'failed' ? 'Ponów' : `Zapisz zmiany (${changes.length})`}
               </button>
             </>
           )}
