@@ -1,7 +1,7 @@
 import type { NotionLink } from '../../types/person';
-import { NotionClient, type NotionPropertyValue } from './notionClient';
+import { NotionClient } from './notionClient';
 import { thumbnailColumn } from './notionPhotos';
-import { DATE_PRECISION_OPTIONS, GRAVES, NOTION_FIELDS_VERSION, PEOPLE, toNotionDate, UNIONS } from './notionMapping';
+import { DATE_PRECISION_OPTIONS, GRAVES, NOTION_FIELDS_VERSION, PEOPLE, UNIONS } from './notionMapping';
 
 const richText = { rich_text: {} };
 const files = { files: {} };
@@ -75,50 +75,4 @@ export async function createNotionDatabases(token: string, parentPageId: string,
   await renameMirror(client, people.dataSourceId, graves.dataSourceId, GRAVES.buried, PEOPLE.grave);
 
   return { databaseId: people.databaseId, dataSourceId: people.dataSourceId, unionsDataSourceId: unions.dataSourceId, gravesDataSourceId: graves.dataSourceId, title: 'Osoby', pageIds: {}, externalIds: {}, unions: {}, graves: {}, photos: {}, baseline: [], syncedAt: new Date().toISOString(), fieldsVersion: NOTION_FIELDS_VERSION, dateColumns: 'date' };
-}
-
-export interface DateMigration {
-  moved: number;
-  // Text the app could not read as a date; it stays in the "(tekst)" column for a person to fix by hand.
-  unreadable: string[];
-}
-
-const textColumnOf = (column: string) => `${column} (tekst)`;
-const plainText = (value: NotionPropertyValue | undefined) => (value?.type === 'rich_text' ? (value as { rich_text: { plain_text: string }[] }).rich_text.map((part) => part.plain_text).join('').trim() : '');
-
-// Turns the text dates of Osoby and Związki into date columns with a precision select. The text columns are kept, renamed to "… (tekst)",
-// and every step can run again: a column already moved is left as it is, and only pages whose new date is still empty are filled.
-export async function moveDatesToDateColumns(token: string, link: NotionLink, onProgress: (message: string) => void): Promise<DateMigration> {
-  const client = new NotionClient(token);
-  const result: DateMigration = { moved: 0, unreadable: [] };
-  const sources: { name: string; dataSourceId: string; columns: [string, string][] }[] = [
-    { name: 'Osoby', dataSourceId: link.dataSourceId, columns: [[PEOPLE.birthDate, PEOPLE.birthPrecision], [PEOPLE.deathDate, PEOPLE.deathPrecision]] },
-    { name: 'Związki', dataSourceId: link.unionsDataSourceId, columns: [[UNIONS.date, UNIONS.datePrecision]] },
-  ];
-  for (const { name, dataSourceId, columns } of sources) {
-    onProgress(`Zmiana kolumn w bazie ${name}…`);
-    const schema = await client.retrieveDataSourceSchema(dataSourceId);
-    for (const [column] of columns) if (schema[column]?.type === 'rich_text') await client.updateDataSource(dataSourceId, { [column]: { name: textColumnOf(column) } });
-    const missing = Object.fromEntries(columns.flatMap(([column, precisionColumn]) => [...(schema[column]?.type === 'date' ? [] : [[column, date]]), ...(schema[precisionColumn] ? [] : [[precisionColumn, precision]])]));
-    if (Object.keys(missing).length) await client.updateDataSource(dataSourceId, missing);
-
-    onProgress(`Wczytywanie bazy ${name}…`);
-    const pages = await client.queryAllPages(dataSourceId);
-    let done = 0;
-    for (const page of pages) {
-      const properties: Record<string, unknown> = {};
-      for (const [column, precisionColumn] of columns) {
-        const current = page.properties[column] as { date?: { start: string } | null } | undefined;
-        const text = plainText(page.properties[textColumnOf(column)]);
-        if (!text || current?.date || page.properties[precisionColumn]?.type === 'select' && (page.properties[precisionColumn] as { select: unknown }).select) continue;
-        const { start, precision: value } = toNotionDate(text);
-        if (!value) { result.unreadable.push(text); continue; }
-        properties[column] = { date: start ? { start } : null };
-        properties[precisionColumn] = { select: { name: value } };
-      }
-      if (Object.keys(properties).length) { await client.updatePage(page.id, { properties }); result.moved++; }
-      onProgress(`Przenoszenie dat w bazie ${name}: ${++done} z ${pages.length}…`);
-    }
-  }
-  return result;
 }
