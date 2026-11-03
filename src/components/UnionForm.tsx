@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { UnionDetails } from '../types/person';
 import { focusOnOpen, useOpenForm } from '../hooks/useOpenForm';
+import { DateField } from './DateField';
 
 // The options of Notion's "Rodzaj" select in the Związki database.
 const UNION_KINDS = ['Małżeństwo', 'Narzeczeństwo', 'Nieformalny'] as const;
@@ -19,12 +20,14 @@ const optional = (value: string) => value.trim() || undefined;
 export function UnionForm({ initial, onSave, onCancel }: UnionFormProps) {
   const [kind, setKind] = useState<string>(initial.kind ?? UNION_KINDS[0]);
   const [date, setDate] = useState(initial.date ?? '');
+  const [dateError, setDateError] = useState<string | null>(null);
+  const [showDateError, setShowDateError] = useState(false);
   const [place, setPlace] = useState(initial.place ?? '');
   const [notes, setNotes] = useState(initial.notes ?? '');
   const kinds = initial.kind && !UNION_KINDS.includes(initial.kind as (typeof UNION_KINDS)[number]) ? [...UNION_KINDS, initial.kind] : [...UNION_KINDS];
 
   const details = { kind: optional(kind), date: optional(date), place: optional(place), notes: optional(notes) };
-  const save = () => { onSave(details); return true; };
+  const save = () => { if (dateError) { setShowDateError(true); return false; } onSave(details); return true; };
   useOpenForm({ isDirty: () => (['kind', 'date', 'place', 'notes'] as const).some((field) => (details[field] ?? '') !== (field === 'kind' ? initial.kind ?? UNION_KINDS[0] : initial[field] ?? '')), save, discard: onCancel });
 
   const submit = (event: FormEvent) => {
@@ -42,10 +45,11 @@ export function UnionForm({ initial, onSave, onCancel }: UnionFormProps) {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block"><span className={labelClass}>Data</span><input autoFocus={focusOnOpen()} value={date} onChange={(e) => setDate(e.target.value)} placeholder="np. 12 maja 1950" className={inputClass} /></label>
-        <label className="block"><span className={labelClass}>Miejsce</span><input value={place} onChange={(e) => setPlace(e.target.value)} className={inputClass} /></label>
+      <div>
+        <span className={labelClass}>Data</span>
+        <DateField value={date} onChange={(value, error) => { setDate(value); setDateError(error); }} invalid={showDateError && Boolean(dateError)} />
       </div>
+      <label className="block"><span className={labelClass}>Miejsce</span><input autoFocus={focusOnOpen()} value={place} onChange={(e) => setPlace(e.target.value)} className={inputClass} /></label>
       <label className="block"><span className={labelClass}>Notatki</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={`${inputClass} resize-y`} /></label>
       <div className="flex justify-end gap-1.5">
         <button type="button" onClick={onCancel} className="h-7 rounded-md px-2.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">Anuluj</button>

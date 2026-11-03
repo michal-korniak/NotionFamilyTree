@@ -1,6 +1,6 @@
 import { Graph, layout as dagreLayout } from '@dagrejs/dagre';
 import type { PeopleById } from '../types/person';
-import { parseYear } from './dates';
+import { dateSortKey } from './dates';
 
 export const NODE_WIDTH = 224;
 export const NODE_HEIGHT = 76;
@@ -54,7 +54,7 @@ function findComponents(people: PeopleById): string[][] {
 }
 
 function byBirth(people: PeopleById) {
-  return (a: string, b: string) => (parseYear(people.get(a)!.birthDate) ?? 9999) - (parseYear(people.get(b)!.birthDate) ?? 9999) || a.localeCompare(b);
+  return (a: string, b: string) => (dateSortKey(people.get(a)!.birthDate) ?? Number.MAX_SAFE_INTEGER) - (dateSortKey(people.get(b)!.birthDate) ?? Number.MAX_SAFE_INTEGER) || a.localeCompare(b);
 }
 
 // A unit is everyone joined by marriages: drawn as one block so spouses always sit side by side.
@@ -108,18 +108,18 @@ function unitWidth(size: number): number {
 
 interface SiblingGroup {
   units: Set<string>;
-  rankOf: Map<string, { year: number; index: number }>;
+  rankOf: Map<string, { birth: number; index: number }>;
 }
 
 // For each family, its children's blocks with the key they are ordered by: birth year, unknown years last in their original order.
 function siblingGroups(units: string[][], unitOf: Map<string, number>, people: PeopleById): SiblingGroup[] {
   const groups: SiblingGroup[] = [];
   units.forEach((members, parentUnit) => {
-    const rankOf = new Map<string, { year: number; index: number }>();
+    const rankOf = new Map<string, { birth: number; index: number }>();
     for (const id of members) for (const childId of people.get(id)!.children) {
       const unit = unitOf.get(childId);
       if (unit === undefined || unit === parentUnit || rankOf.has(String(unit))) continue;
-      rankOf.set(String(unit), { year: parseYear(people.get(childId)!.birthDate) ?? Number.POSITIVE_INFINITY, index: rankOf.size });
+      rankOf.set(String(unit), { birth: dateSortKey(people.get(childId)!.birthDate) ?? Number.POSITIVE_INFINITY, index: rankOf.size });
     }
     if (rankOf.size > 1) groups.push({ units: new Set(rankOf.keys()), rankOf });
   });
@@ -155,7 +155,7 @@ function enforceSiblingOrder(graph: OrderGraph, groups: SiblingGroup[]) {
     for (const group of groups) {
       const slots = row.map((v, i) => (group.units.has(v) ? i : -1)).filter((i) => i >= 0);
       if (slots.length < 2) continue;
-      const ordered = slots.map((i) => row[i]!).sort((a, b) => { const ra = group.rankOf.get(a)!; const rb = group.rankOf.get(b)!; return ra.year - rb.year || ra.index - rb.index; });
+      const ordered = slots.map((i) => row[i]!).sort((a, b) => { const ra = group.rankOf.get(a)!; const rb = group.rankOf.get(b)!; return ra.birth - rb.birth || ra.index - rb.index; });
       slots.forEach((slot, i) => { row[slot] = ordered[i]!; });
     }
     row.forEach((v, i) => { graph.node(v).order = i; });

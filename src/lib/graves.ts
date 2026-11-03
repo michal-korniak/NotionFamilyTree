@@ -1,6 +1,6 @@
 import type { GraveDetails, PeopleById, Person } from '../types/person';
 import { displayName } from './names';
-import { parseYear } from './dates';
+import { dateSortKey } from './dates';
 import { relationship } from './kinship';
 
 export function buriedIn(people: PeopleById, graveId: string): Person[] {
@@ -9,7 +9,7 @@ export function buriedIn(people: PeopleById, graveId: string): Person[] {
 
 // "Władysław Gębala, Michalina Gębala": everyone buried there, oldest first.
 function namesOf(buried: Person[]): string {
-  return [...buried].sort((a, b) => (parseYear(a.birthDate) ?? Infinity) - (parseYear(b.birthDate) ?? Infinity)).map(displayName).join(', ');
+  return [...buried].sort((a, b) => (dateSortKey(a.birthDate) ?? Infinity) - (dateSortKey(b.birthDate) ?? Infinity)).map(displayName).join(', ');
 }
 
 // A grave is always named after the people buried in it, in the app and as its Notion title; only a grave nobody is in any more

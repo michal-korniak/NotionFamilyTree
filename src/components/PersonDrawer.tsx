@@ -109,7 +109,7 @@ function PersonDetailsView({ person, people, graves, relationToMe, actions, onSe
         <div className="divide-y divide-zinc-100 rounded-lg border border-zinc-200 px-3 dark:divide-zinc-900 dark:border-zinc-800">
           {showBorn && <Fact icon={<Cake className="size-4" />} label="Urodziny">{withPlace(person.birthDate, person.birthPlace)}</Fact>}
           {showDied && <Fact icon={<Flower2 className="size-4" />} label="Śmierć">{withPlace(person.deathDate, person.deathPlace)}</Fact>}
-          {age !== undefined && <Fact icon={<Hourglass className="size-4" />} label={isDeceased(person) ? 'Wiek w chwili śmierci' : 'Wiek'}>{countOf(age, 'rok', 'lata', 'lat')}</Fact>}
+          {age !== undefined && <Fact icon={<Hourglass className="size-4" />} label={isDeceased(person) ? 'Wiek w chwili śmierci' : 'Wiek'}>{age.approximate ? '~' : ''}{countOf(age.years, 'rok', 'lata', 'lat')}</Fact>}
         </div>
       )}
 

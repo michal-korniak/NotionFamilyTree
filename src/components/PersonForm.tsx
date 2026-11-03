@@ -1,7 +1,8 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import type { Gender, GraveDetails, PeopleById, Person } from '../types/person';
 import type { PersonDetails } from '../lib/treeEdits';
-import { isValidDateText, parseYear } from '../lib/dates';
+import { isDeceased, isUnknownDate, parseYear } from '../lib/dates';
+import { DateField } from './DateField';
 import { composeName, displayName, nameParts } from '../lib/names';
 import { GRAVES, PEOPLE } from '../lib/notion/notionMapping';
 import { buriedIn, cemeteryGroups, closenessTo, graveTitle, newGraveId } from '../lib/graves';
@@ -25,7 +26,7 @@ interface PersonFormProps {
   gravesEnabled: boolean;
 }
 
-type FormValues = Record<'givenNames' | 'birthSurname' | 'marriedSurname' | 'birthDate' | 'deathDate' | 'birthPlace' | 'deathPlace' | 'biography', string> & { gender: Gender | null };
+type FormValues = Record<'givenNames' | 'birthSurname' | 'marriedSurname' | 'birthDate' | 'deathDate' | 'birthPlace' | 'deathPlace' | 'biography', string> & { gender: Gender | null; deceased: boolean };
 
 type GraveValues = Record<keyof GraveDetails, string>;
 
@@ -36,20 +37,25 @@ type FormErrors = Partial<Record<keyof FormValues, string>>;
 const inputClass = 'w-full rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 aria-invalid:border-red-400 dark:border-zinc-800 dark:bg-zinc-900 dark:focus:border-zinc-600 dark:focus:ring-zinc-800';
 
 function toValues(person: Person, isNew: boolean): FormValues {
-  return { ...nameParts(person), gender: isNew && person.gender === 'U' ? null : person.gender, birthDate: person.birthDate ?? '', deathDate: person.deathDate ?? '', birthPlace: person.birthPlace ?? '', deathPlace: person.deathPlace ?? '', biography: person.biography ?? '' };
+  return { ...nameParts(person), gender: isNew && person.gender === 'U' ? null : person.gender, birthDate: person.birthDate ?? '', deathDate: person.deathDate ?? '', deceased: Boolean(person.deathDate?.trim()) || deceasedByAge(person) || Boolean(person.graveId), birthPlace: person.birthPlace ?? '', deathPlace: person.deathPlace ?? '', biography: person.biography ?? '' };
 }
+
+// Born so long ago that the app counts them as deceased without a death date; saving keeps it that way instead of writing "nieznana".
+const deceasedByAge = (person: Person) => !person.deathDate?.trim() && isDeceased(person);
 
 function toGraveValues(grave: GraveDetails | undefined): GraveValues {
   return { name: grave?.name ?? '', cemetery: grave?.cemetery ?? '', info: grave?.info ?? '' };
 }
 
-function validate(values: FormValues): FormErrors {
+type DateErrors = Partial<Record<'birthDate' | 'deathDate', string>>;
+
+function validate(values: FormValues, dateErrors: DateErrors): FormErrors {
   const errors: FormErrors = {};
   if (!values.givenNames.trim() && !values.birthSurname.trim() && !values.marriedSurname.trim()) errors.givenNames = 'Podaj imię albo nazwisko.';
   if (!values.gender) errors.gender = 'Wybierz płeć.';
-  for (const field of ['birthDate', 'deathDate'] as const) {
-    if (values[field].trim() && !isValidDateText(values[field])) errors[field] = 'Podaj rok, np. 1905, 1905-04-12 albo ok. 1820.';
-  }
+  if (dateErrors.birthDate) errors.birthDate = dateErrors.birthDate;
+  if (!values.deceased) return errors;
+  if (dateErrors.deathDate) errors.deathDate = dateErrors.deathDate;
   const birth = parseYear(values.birthDate);
   const death = parseYear(values.deathDate);
   if (!errors.deathDate && birth !== undefined && death !== undefined && death < birth) errors.deathDate = 'Data śmierci nie może być wcześniejsza niż urodzenia.';
@@ -92,6 +98,14 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
   const buriedWith = useMemo(() => (graveId ? buriedIn(people, graveId).filter((other) => other.id !== person.id) : []), [people, graveId, person.id]);
 
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) => setValues((v) => ({ ...v, [key]: value }));
+  const [dateErrors, setDateErrors] = useState<DateErrors>({});
+  const setDate = (key: keyof DateErrors, value: string, error: string | null) => {
+    set(key, value);
+    setDateErrors((current) => { const next = { ...current }; if (error) next[key] = error; else delete next[key]; return next; });
+    if (!error) setErrors((current) => { const next = { ...current }; delete next[key]; return next; });
+  };
+  // Unticking only hides the death date, place and grave; they are dropped on save, so ticking again before that brings them back.
+  const setDeceased = (deceased: boolean) => set('deceased', deceased);
   const setGrave = (key: keyof GraveValues, value: string) => setGraveValues((v) => ({ ...v, [key]: value }));
   const chooseGrave = (value: string) => {
     const id = value === NEW_GRAVE ? newGraveId(graves) : value;
@@ -104,12 +118,12 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
 
   const submit = (event?: FormEvent): boolean => {
     event?.preventDefault();
-    const found = validate(values);
+    const found = validate(values, dateErrors);
     setErrors(found);
     if (Object.keys(found).length) return false;
-    const details: PersonDetails = { name: fullName, givenNames: values.givenNames.trim(), birthSurname: values.birthSurname.trim(), marriedSurname: values.marriedSurname.trim(), gender: values.gender ?? 'U', birthDate: optional(values.birthDate), deathDate: optional(values.deathDate), birthPlace: optional(values.birthPlace), deathPlace: optional(values.deathPlace), graveId: graveId || undefined, biography: optional(values.biography) };
-    const grave = graveId ? { id: graveId, details: { name: graveTitle(undefined, [...buriedWith, { ...person, ...details }]), cemetery: optional(graveValues.cemetery), info: optional(graveValues.info) } } : undefined;
-    photoDraft.keep(photoOwners);
+    const details: PersonDetails = { name: fullName, givenNames: values.givenNames.trim(), birthSurname: values.birthSurname.trim(), marriedSurname: values.marriedSurname.trim(), gender: values.gender ?? 'U', birthDate: optional(values.birthDate), deathDate: values.deceased ? optional(values.deathDate) ?? (deceasedByAge(person) ? undefined : 'nieznana') : undefined, birthPlace: optional(values.birthPlace), deathPlace: values.deceased ? optional(values.deathPlace) : undefined, graveId: (values.deceased && graveId) || undefined, biography: optional(values.biography) };
+    const grave = values.deceased && graveId ? { id: graveId, details: { name: graveTitle(undefined, [...buriedWith, { ...person, ...details }]), cemetery: optional(graveValues.cemetery), info: optional(graveValues.info) } } : undefined;
+    photoDraft.keep(values.deceased ? photoOwners : [person.id]);
     onSave(details, grave);
     return true;
   };
@@ -132,7 +146,6 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
           <input value={values.birthSurname} onChange={(e) => set('birthSurname', e.target.value)} className={inputClass} />
         </Field>
       </div>
-      {fullName && <p className="-mt-1 text-xs text-zinc-500">W Notion jako: <span className="font-medium text-zinc-700 dark:text-zinc-300">{fullName}</span></p>}
       <Field label="Płeć" error={errors.gender}>
         <div className={`grid ${isNew ? 'grid-cols-2' : 'grid-cols-3'} gap-1 rounded-md border p-0.5 ${errors.gender ? 'border-red-400' : 'border-zinc-200 dark:border-zinc-800'}`}>
           {(isNew ? (['M', 'F'] as const) : (['M', 'F', 'U'] as const)).map((g) => (
@@ -141,21 +154,27 @@ export function PersonForm({ person, isNew = false, onSave, onCancel, notionPage
         </div>
       </Field>
       {notionPageId !== undefined && <PhotoField label="Zdjęcia"><PhotoGallery personId={person.id} property={PEOPLE.photos} addLabel="Dodaj zdjęcie" /></PhotoField>}
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Data urodzenia" error={errors.birthDate}>
-          <input value={values.birthDate} onChange={(e) => set('birthDate', e.target.value)} placeholder="1905-04-12" aria-invalid={Boolean(errors.birthDate)} className={`${inputClass} font-mono`} />
-        </Field>
-        <Field label="Miejsce urodzenia">
-          <input value={values.birthPlace} onChange={(e) => set('birthPlace', e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="Data śmierci" error={errors.deathDate}>
-          <input value={values.deathDate} onChange={(e) => set('deathDate', e.target.value)} aria-invalid={Boolean(errors.deathDate)} className={`${inputClass} font-mono`} />
-        </Field>
+      <Field label="Data urodzenia" error={dateErrors.birthDate ? undefined : errors.birthDate}>
+        <DateField value={values.birthDate} onChange={(value, error) => setDate('birthDate', value, error)} invalid={Boolean(errors.birthDate)} />
+      </Field>
+      <Field label="Miejsce urodzenia">
+        <input value={values.birthPlace} onChange={(e) => set('birthPlace', e.target.value)} className={inputClass} />
+      </Field>
+      <label className="flex w-fit items-center gap-1.5 text-xs text-zinc-600 select-none dark:text-zinc-400"><input type="checkbox" checked={values.deceased} onChange={(e) => setDeceased(e.target.checked)} className="size-3.5 accent-zinc-900 dark:accent-zinc-100" />Nie żyje</label>
+      {values.deceased && (
+        <div>
+          <span className="mb-1 block truncate text-[11px] font-medium tracking-wider text-zinc-500 uppercase">Data śmierci</span>
+          {/* "nieznana" marks a death with no known date; the field then starts empty. */}
+          <DateField value={isUnknownDate(values.deathDate) ? '' : values.deathDate} onChange={(value, error) => setDate('deathDate', value, error)} invalid={Boolean(errors.deathDate)} />
+          {!dateErrors.deathDate && errors.deathDate && <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{errors.deathDate}</span>}
+        </div>
+      )}
+      {values.deceased && (
         <Field label="Miejsce śmierci">
           <input value={values.deathPlace} onChange={(e) => set('deathPlace', e.target.value)} className={inputClass} />
         </Field>
-      </div>
-      {gravesEnabled && <GraveField person={person} people={people} graves={graves} graveId={graveId} isNewGrave={isNewGrave} values={graveValues} buriedWith={buriedWith} withPhotos={notionPageId !== undefined} onChoose={chooseGrave} onChange={setGrave} />}
+      )}
+      {gravesEnabled && values.deceased && <GraveField person={person} people={people} graves={graves} graveId={graveId} isNewGrave={isNewGrave} values={graveValues} buriedWith={buriedWith} withPhotos={notionPageId !== undefined} onChoose={chooseGrave} onChange={setGrave} />}
       <Field label="Biografia">
         <textarea value={values.biography} onChange={(e) => set('biography', e.target.value)} rows={6} className={`${inputClass} resize-y leading-relaxed`} />
       </Field>

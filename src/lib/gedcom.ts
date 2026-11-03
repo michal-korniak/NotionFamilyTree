@@ -1,15 +1,10 @@
 import { unionKey, type GraveDetails, type PeopleById, type Person, type UnionDetails } from '../types/person';
-import { isDeceased } from './dates';
+import { isDeceased, polishMonth } from './dates';
 
 // GEDCOM 5.5.1 (the version MyHeritage, Ancestry, FamilySearch and Gramps all read). Photos are left out: Notion's file links expire
 // after an hour, so they would be dead in the file.
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-// Polish months as they appear in dates: genitive after a day ("12 maja 1950"), nominative before a bare year ("styczeń 2001").
-const POLISH_MONTHS: Record<string, number> = {
-  stycznia: 1, styczeń: 1, lutego: 2, luty: 2, marca: 3, marzec: 3, kwietnia: 4, kwiecień: 4, maja: 5, maj: 5, czerwca: 6, czerwiec: 6,
-  lipca: 7, lipiec: 7, sierpnia: 8, sierpień: 8, września: 9, wrzesień: 9, października: 10, październik: 10, listopada: 11, listopad: 11, grudnia: 12, grudzień: 12,
-};
 
 function exactDate(text: string): string | null {
   const iso = /^(\d{3,4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/.exec(text);
@@ -20,7 +15,7 @@ function exactDate(text: string): string | null {
   }
   const written = /^(?:(\d{1,2})\.?\s+)?([a-ząćęłńóśźż]+)\s+(\d{3,4})$/i.exec(text);
   if (written) {
-    const month = POLISH_MONTHS[written[2]!.toLowerCase()];
+    const month = polishMonth(written[2]!);
     return month ? [written[1] ? String(Number(written[1])) : '', MONTHS[month - 1], written[3]].filter(Boolean).join(' ') : null;
   }
   const dotted = /^(\d{1,2})\.(\d{1,2})\.(\d{3,4})$/.exec(text);
