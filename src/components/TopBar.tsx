@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Church, Download, FileDown, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
+import { CalendarClock, Church, Download, FileDown, FileJson, LogOut, Moon, MoreHorizontal, Network, RefreshCw, UserRound, Redo2, Sun, Undo2, UserPlus } from 'lucide-react';
 import type { PeopleById, TreeStats } from '../types/person';
 import type { Theme } from '../hooks/useTheme';
 import { SearchBar } from './SearchBar';
@@ -23,6 +23,8 @@ interface TopBarProps {
   onRefresh: () => void;
   onOpenNotion: () => void;
   onConnectNotion: () => void;
+  // Offered while the linked Notion still keeps dates as text.
+  onMigrateDates?: () => void;
   onToggleTheme: () => void;
   onSelect: (id: string) => void;
   onAddPerson: () => void;
@@ -36,7 +38,7 @@ interface TopBarProps {
 }
 
 
-export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onConnectNotion, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onExportGedcom, onShowCemeteries }: TopBarProps) {
+export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, notionPending, notionConflicts = [], refreshing, onRefresh, onOpenNotion, onConnectNotion, onMigrateDates, onGoHome, onChangeMe, onToggleTheme, onSelect, onAddPerson, onUndo, onRedo, onReset, onExportGedcom, onShowCemeteries }: TopBarProps) {
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur sm:gap-4 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="hidden min-w-0 items-center gap-2 sm:flex">
@@ -96,7 +98,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
         <MoreMenu compactItems={[
           { label: 'Dodaj osobę', icon: <UserPlus className="size-3.5" />, onSelect: onAddPerson },
           { label: 'Zarządzaj grobami', icon: <Church className="size-3.5" />, onSelect: onShowCemeteries },
-        ]} themeItem={{ label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme }} onChangeMe={onChangeMe} onShowCemeteries={onShowCemeteries} onExportGedcom={onExportGedcom} onClose={onReset} />
+        ]} themeItem={{ label: theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny', icon: theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />, onSelect: onToggleTheme }} onChangeMe={onChangeMe} onMigrateDates={onMigrateDates} onShowCemeteries={onShowCemeteries} onExportGedcom={onExportGedcom} onClose={onReset} />
       </div>
     </header>
   );
@@ -106,7 +108,7 @@ export function TopBar({ people, stats, sourceName, theme, canUndo, canRedo, not
 interface CompactMenuItem { label: string; icon: ReactNode; disabled?: boolean; onSelect: () => void }
 
 // On narrow screens the top bar has no room for undo/redo, refresh and the theme switch, so they move into this menu.
-function MoreMenu({ compactItems, themeItem, onChangeMe, onShowCemeteries, onExportGedcom, onClose }: { compactItems: (CompactMenuItem | 'separator')[]; themeItem: CompactMenuItem; onChangeMe: () => void; onShowCemeteries: () => void; onExportGedcom: () => void; onClose: () => void }) {
+function MoreMenu({ compactItems, themeItem, onChangeMe, onMigrateDates, onShowCemeteries, onExportGedcom, onClose }: { compactItems: (CompactMenuItem | 'separator')[]; themeItem: CompactMenuItem; onChangeMe: () => void; onMigrateDates?: () => void; onShowCemeteries: () => void; onExportGedcom: () => void; onClose: () => void }) {
   const install = useInstallPrompt();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -141,6 +143,12 @@ function MoreMenu({ compactItems, themeItem, onChangeMe, onShowCemeteries, onExp
             <Church className="size-3.5" />
             Zarządzaj grobami
           </button>
+          {onMigrateDates && (
+            <button type="button" role="menuitem" onClick={choose(onMigrateDates)} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
+              <CalendarClock className="size-3.5" />
+              Przenieś daty do kolumn dat
+            </button>
+          )}
           <button type="button" role="menuitem" onClick={choose(onChangeMe)} className={`${item} text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
             <UserRound className="size-3.5" />
             Zmień użytkownika
