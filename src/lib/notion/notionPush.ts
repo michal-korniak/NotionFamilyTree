@@ -299,10 +299,10 @@ export async function pushToNotion(token: string, link: NotionLink, current: Peo
 
     // Pages are created without relations first, so every person has a page id before any relation points at them.
     for (const person of [...p.created, ...p.restored]) {
-      if (pageIds[person.id] && p.restored.includes(person)) await client.updatePage(pageIds[person.id]!, { in_trash: false, properties: detailProperties(person, filledDetailFields(person)) });
+      if (pageIds[person.id] && p.restored.includes(person)) await client.updatePage(pageIds[person.id]!, { in_trash: false, properties: detailProperties(person, filledDetailFields(person), link.dateColumns) });
       else {
         const externalId = newExternalId(knownExternalIds);
-        const page = await client.createPage(link.dataSourceId, { ...detailProperties(person, filledDetailFields(person)), ...externalIdProperty(externalId) });
+        const page = await client.createPage(link.dataSourceId, { ...detailProperties(person, filledDetailFields(person), link.dateColumns), ...externalIdProperty(externalId) });
         pageIds[person.id] = page.id;
         externalIds[person.id] = externalId;
         knownExternalIds.add(externalId);
@@ -319,7 +319,7 @@ export async function pushToNotion(token: string, link: NotionLink, current: Peo
     }
 
     for (const { person, fields, parents, grave } of p.updated) {
-      await client.updatePage(pageIds[person.id]!, { properties: { ...detailProperties(person, fields), ...(parents ? parentRelations(person) : {}), ...(grave ? graveRelation(person) : {}) } });
+      await client.updatePage(pageIds[person.id]!, { properties: { ...detailProperties(person, fields, link.dateColumns), ...(parents ? parentRelations(person) : {}), ...(grave ? graveRelation(person) : {}) } });
       baseline.set(person.id, { ...person, spouses: baseline.get(person.id)?.spouses ?? [] });
       step();
     }
@@ -327,7 +327,7 @@ export async function pushToNotion(token: string, link: NotionLink, current: Peo
     for (const [a, b] of p.unionsCreated) {
       const key = unionKey(a, b);
       if (!unions[key]) {
-        const page = await client.createPage(link.unionsDataSourceId, unionProperties(current.get(a)!, current.get(b)!, pageIds[a]!, pageIds[b]!, currentUnions[key]));
+        const page = await client.createPage(link.unionsDataSourceId, unionProperties(current.get(a)!, current.get(b)!, pageIds[a]!, pageIds[b]!, currentUnions[key], link.dateColumns));
         unions[key] = { pageId: page.id, ...currentUnions[key] };
       }
       setSpouses(a, (s) => [...new Set([...s, b])]);
@@ -343,7 +343,7 @@ export async function pushToNotion(token: string, link: NotionLink, current: Peo
     for (const { pair: [a, b] } of p.unionsUpdated) {
       const key = unionKey(a, b);
       const details = currentUnions[key] ?? {};
-      await client.updatePage(unions[key]!.pageId, { properties: unionDetailProperties(details) });
+      await client.updatePage(unions[key]!.pageId, { properties: unionDetailProperties(details, link.dateColumns) });
       unions[key] = { ...unions[key]!, kind: details.kind, date: details.date, place: details.place, notes: details.notes };
       step();
     }

@@ -1,6 +1,7 @@
-import { unionKey, type Gender, type GraveDetails, type GraveRecord, type NotionLink, type Person, type StoredPhoto, type UnionDetails, type UnionRecord } from '../../types/person';
+import { unionKey, type DateColumns, type Gender, type GraveDetails, type GraveRecord, type NotionLink, type Person, type StoredPhoto, type UnionDetails, type UnionRecord } from '../../types/person';
 import { NotionClient, NotionError, type NotionPage, type NotionPropertyValue } from './notionClient';
 import { readPhotoColumns } from './notionPhotos';
+import { formatPartialDate, isUnknownDate, parsePartialDate, type DateQualifier } from '../dates';
 
 // Property names of the "Drzewo" workspace (a MyHeritage import): an "Osoby" database of people, a "Związki" database of couples and a "Groby" database of graves.
 // Ojciec/Matka are two-way relations mirrored by the two "Dzieci" properties, Osoby.Związki mirrors Związki.Partnerzy and Osoby.Grób mirrors
@@ -9,8 +10,10 @@ export const PEOPLE = {
   name: 'Imię i nazwisko',
   gender: 'Płeć',
   birthDate: 'Data urodzenia',
+  birthPrecision: 'Data urodzenia – dokładność',
   birthPlace: 'Miejsce urodzenia',
   deathDate: 'Data śmierci',
+  deathPrecision: 'Data śmierci – dokładność',
   deathPlace: 'Miejsce śmierci',
   grave: 'Grób',
   photos: 'Zdjęcie',
@@ -31,6 +34,7 @@ export const UNIONS = {
   partners: 'Partnerzy',
   kind: 'Rodzaj',
   date: 'Data',
+  datePrecision: 'Data – dokładność',
   place: 'Miejsce',
   ending: 'Zakończenie',
   notes: 'Notatki',
@@ -45,7 +49,7 @@ export const GRAVES = {
 } as const;
 
 // Bump when the import starts reading another column, so the next refresh reads every page again instead of only the edited ones.
-export const NOTION_FIELDS_VERSION = 6;
+export const NOTION_FIELDS_VERSION = 7;
 
 export const PHOTO_PROPERTIES = [PEOPLE.photos] as const;
 export const GRAVE_PHOTO_PROPERTIES = [GRAVES.photos] as const;
@@ -112,7 +116,10 @@ interface Databases {
   unionsDataSourceId: string;
   gravesDataSourceId?: string;
   title: string;
+  dateColumns: DateColumns;
 }
+
+const dateColumnsOf = (schema: Record<string, { type: string }>): DateColumns => (schema[PEOPLE.birthDate]?.type === 'date' ? 'date' : 'text');
 
 // The link may point at the "Drzewo" page or straight at the "Osoby" database; the unions database is then found through the Osoby.Związki relation, so its link is never needed.
 async function locateDatabases(client: NotionClient, id: string): Promise<Databases> {
@@ -134,7 +141,7 @@ async function locateDatabases(client: NotionClient, id: string): Promise<Databa
   const unionsDataSourceId = schema[PEOPLE.unions]?.relation?.data_source_id;
   if (!unionsDataSourceId) throw new Error(`„${PEOPLE.unions}” w bazie Osoby musi być relacją do bazy Związki.`);
   const gravesDataSourceId = schema[PEOPLE.grave]?.relation?.data_source_id;
-  return { databaseId, dataSourceId: database.dataSourceId, unionsDataSourceId, ...(gravesDataSourceId ? { gravesDataSourceId } : {}), title: database.title };
+  return { databaseId, dataSourceId: database.dataSourceId, unionsDataSourceId, ...(gravesDataSourceId ? { gravesDataSourceId } : {}), title: database.title, dateColumns: dateColumnsOf(schema) };
 }
 
 // The ID property (e.g. "K-I500099") becomes the person id when present and unique, so the stored JSON stays readable and matches MyHeritage; otherwise the Notion page id is used.
@@ -196,9 +203,9 @@ async function personRecord(client: NotionClient, page: NotionPage, personId: st
     id: personId,
     name: text(p[PEOPLE.name]) ?? 'Bez imienia',
     gender: genderFromNotion[selectName(p[PEOPLE.gender]) ?? ''],
-    birthDate: text(p[PEOPLE.birthDate]),
+    birthDate: readDate(p, PEOPLE.birthDate, PEOPLE.birthPrecision),
     birthPlace: text(p[PEOPLE.birthPlace]),
-    deathDate: text(p[PEOPLE.deathDate]),
+    deathDate: readDate(p, PEOPLE.deathDate, PEOPLE.deathPrecision),
     deathPlace: text(p[PEOPLE.deathPlace]),
     graveId: toGraveId((await relationIds(client, page, PEOPLE.grave))[0]),
     parents: toIds([...await relationIds(client, page, PEOPLE.father), ...await relationIds(client, page, PEOPLE.mother)]),
@@ -220,7 +227,7 @@ async function addUnions(client: NotionClient, pages: NotionPage[], toIds: ToPer
     const key = unionKey(partners[0]!, partners[1]!);
     if (unions[key]) { duplicates++; continue; }
     const p = page.properties;
-    unions[key] = { pageId: page.id, kind: selectName(p[UNIONS.kind]), date: text(p[UNIONS.date]), place: text(p[UNIONS.place]), notes: text(p[UNIONS.notes]), ending: selectName(p[UNIONS.ending]) };
+    unions[key] = { pageId: page.id, kind: selectName(p[UNIONS.kind]), date: readDate(p, UNIONS.date, UNIONS.datePrecision), place: text(p[UNIONS.place]), notes: text(p[UNIONS.notes]), ending: selectName(p[UNIONS.ending]) };
   }
   return { skipped, duplicates };
 }
@@ -262,8 +269,11 @@ export interface NotionRefresh extends NotionImport {
 export async function refreshNotionDatabase(token: string, link: NotionLink, onProgress?: (message: string) => void): Promise<NotionRefresh> {
   const client = new NotionClient(token);
   // Groby can be added, or shared with the integration, after the tree was imported; it then needs the full read that finds it.
-  const gravesAppeared = !link.gravesDataSourceId && Boolean((await client.retrieveDataSourceSchema(link.dataSourceId))[PEOPLE.grave]?.relation?.data_source_id);
-  if (link.fieldsVersion !== NOTION_FIELDS_VERSION || gravesAppeared) {
+  const schema = await client.retrieveDataSourceSchema(link.dataSourceId);
+  const gravesAppeared = !link.gravesDataSourceId && Boolean(schema[PEOPLE.grave]?.relation?.data_source_id);
+  // Dates moved from text to date columns (or back) since the last sync: every page reads differently now.
+  const datesMoved = dateColumnsOf(schema) !== (link.dateColumns ?? 'text');
+  if (link.fieldsVersion !== NOTION_FIELDS_VERSION || gravesAppeared || datesMoved) {
     const full = await importNotionDatabase(token, link.databaseId, onProgress);
     return { ...full, changedPersonIds: full.records.map((record) => record.id), removedPersonIds: [], changedUnionKeys: Object.keys(full.link.unions), removedUnionKeys: [], changedGraveIds: Object.keys(full.link.graves ?? {}), removedGraveIds: [], changedPhotos: 0 };
   }
@@ -360,7 +370,7 @@ export async function refreshNotionDatabase(token: string, link: NotionLink, onP
   return {
     records,
     warnings: unionWarnings(unionCounts),
-    link: { databaseId: link.databaseId, dataSourceId: link.dataSourceId, unionsDataSourceId: link.unionsDataSourceId, ...(link.gravesDataSourceId ? { gravesDataSourceId: link.gravesDataSourceId } : {}), title: link.title, pageIds, externalIds, unions, graves, syncedAt: startedAt, fieldsVersion: NOTION_FIELDS_VERSION, photos },
+    link: { databaseId: link.databaseId, dataSourceId: link.dataSourceId, unionsDataSourceId: link.unionsDataSourceId, ...(link.gravesDataSourceId ? { gravesDataSourceId: link.gravesDataSourceId } : {}), title: link.title, pageIds, externalIds, unions, graves, syncedAt: startedAt, fieldsVersion: NOTION_FIELDS_VERSION, photos, dateColumns: link.dateColumns },
     changedPersonIds,
     changedUnionKeys,
     changedGraveIds,
@@ -395,26 +405,67 @@ function richText(value: string | undefined) {
   return chunks;
 }
 
+// A date column holds a whole day, so the "– dokładność" select beside it says which parts are real (YearOnly keeps 1 January) and how
+// sure the date is; Unknown, with no date, marks a death whose date nobody knows.
+const PRECISIONS = ['YearOnly', 'Month+Year', 'Day+Month+Year'] as const;
+const QUALIFIER_WORDS: Record<DateQualifier, string> = { exact: '', about: 'About ', before: 'Before ', after: 'After ' };
+export const UNKNOWN_DATE = 'Unknown';
+export const DATE_PRECISION_OPTIONS = [...Object.values(QUALIFIER_WORDS).flatMap((word) => PRECISIONS.map((precision) => `${word}${precision}`)), UNKNOWN_DATE];
+
+const pad = (value: number, length = 2) => String(value).padStart(length, '0');
+
+export function toNotionDate(value: string | undefined): { start: string | null; precision: string | null } {
+  if (!value?.trim()) return { start: null, precision: null };
+  if (isUnknownDate(value)) return { start: null, precision: UNKNOWN_DATE };
+  const date = parsePartialDate(value);
+  if (!date) return { start: null, precision: null };
+  const precision = date.day ? 'Day+Month+Year' : date.month ? 'Month+Year' : 'YearOnly';
+  return { start: `${pad(date.year, 4)}-${pad(date.month ?? 1)}-${pad(date.day ?? 1)}`, precision: `${QUALIFIER_WORDS[date.qualifier]}${precision}` };
+}
+
+// A date typed straight into Notion without a precision is taken as the whole day it shows.
+export function fromNotionDate(start: string | undefined, precision: string | undefined): string | undefined {
+  if (precision === UNKNOWN_DATE) return 'nieznana';
+  const [year, month, day] = (start ?? '').slice(0, 10).split('-').map(Number);
+  if (!year) return undefined;
+  const parsed = /^(?:(About|Before|After) )?(YearOnly|Month\+Year|Day\+Month\+Year)$/.exec(precision ?? '');
+  const qualifier = (Object.keys(QUALIFIER_WORDS) as DateQualifier[]).find((key) => QUALIFIER_WORDS[key].trim() === (parsed?.[1] ?? '')) ?? 'exact';
+  const parts = parsed?.[2] ?? 'Day+Month+Year';
+  return formatPartialDate({ qualifier, year, month: parts === 'YearOnly' ? undefined : month, day: parts === 'Day+Month+Year' ? day : undefined });
+}
+
+function readDate(properties: Record<string, NotionPropertyValue>, column: string, precisionColumn: string): string | undefined {
+  const value = properties[column];
+  if (value?.type !== 'date') return text(value);
+  return fromNotionDate((value as { date: { start: string } | null }).date?.start, selectName(properties[precisionColumn]));
+}
+
+function dateProperties(column: string, precisionColumn: string, value: string | undefined, columns: DateColumns = 'text'): Record<string, unknown> {
+  if (columns === 'text') return { [column]: { rich_text: richText(value) } };
+  const { start, precision } = toNotionDate(value);
+  return { [column]: { date: start ? { start } : null }, [precisionColumn]: { select: precision ? { name: precision } : null } };
+}
+
 export const DETAIL_FIELDS = ['name', 'givenNames', 'birthSurname', 'marriedSurname', 'gender', 'birthDate', 'deathDate', 'birthPlace', 'deathPlace', 'biography'] as const;
 
 export type DetailField = (typeof DETAIL_FIELDS)[number];
 
 // Only the given fields are sent: rewriting an unchanged rich-text property would flatten any formatting, links or mentions it has in Notion.
-export function detailProperties(person: Person, fields: readonly DetailField[] = DETAIL_FIELDS): Record<string, unknown> {
+export function detailProperties(person: Person, fields: readonly DetailField[] = DETAIL_FIELDS, dateColumns?: DateColumns): Record<string, unknown> {
   const gender = genderToNotion[person.gender];
-  const all: Record<DetailField, [string, unknown]> = {
-    name: [PEOPLE.name, { title: richText(person.name) }],
-    gender: [PEOPLE.gender, { select: gender ? { name: gender } : null }],
-    birthDate: [PEOPLE.birthDate, { rich_text: richText(person.birthDate) }],
-    birthPlace: [PEOPLE.birthPlace, { rich_text: richText(person.birthPlace) }],
-    deathDate: [PEOPLE.deathDate, { rich_text: richText(person.deathDate) }],
-    deathPlace: [PEOPLE.deathPlace, { rich_text: richText(person.deathPlace) }],
-    biography: [PEOPLE.notes, { rich_text: richText(person.biography) }],
-    givenNames: [PEOPLE.givenNames, { rich_text: richText(person.givenNames) }],
-    birthSurname: [PEOPLE.birthSurname, { rich_text: richText(person.birthSurname) }],
-    marriedSurname: [PEOPLE.marriedSurname, { rich_text: richText(person.marriedSurname) }],
+  const all: Record<DetailField, Record<string, unknown>> = {
+    name: { [PEOPLE.name]: { title: richText(person.name) } },
+    gender: { [PEOPLE.gender]: { select: gender ? { name: gender } : null } },
+    birthDate: dateProperties(PEOPLE.birthDate, PEOPLE.birthPrecision, person.birthDate, dateColumns),
+    birthPlace: { [PEOPLE.birthPlace]: { rich_text: richText(person.birthPlace) } },
+    deathDate: dateProperties(PEOPLE.deathDate, PEOPLE.deathPrecision, person.deathDate, dateColumns),
+    deathPlace: { [PEOPLE.deathPlace]: { rich_text: richText(person.deathPlace) } },
+    biography: { [PEOPLE.notes]: { rich_text: richText(person.biography) } },
+    givenNames: { [PEOPLE.givenNames]: { rich_text: richText(person.givenNames) } },
+    birthSurname: { [PEOPLE.birthSurname]: { rich_text: richText(person.birthSurname) } },
+    marriedSurname: { [PEOPLE.marriedSurname]: { rich_text: richText(person.marriedSurname) } },
   };
-  return Object.fromEntries(fields.map((field) => all[field]));
+  return Object.assign({}, ...fields.map((field) => all[field]));
 }
 
 // Ojciec and Matka hold one parent each: men go to Ojciec, women to Matka, and a parent of unknown gender takes whichever slot is still free.
@@ -457,17 +508,17 @@ export function unionTitle(a: Person, b: Person): string {
   return `${first.name} & ${second.name}`;
 }
 
-export function unionDetailProperties(details: UnionDetails): Record<string, unknown> {
+export function unionDetailProperties(details: UnionDetails, dateColumns?: DateColumns): Record<string, unknown> {
   return {
     [UNIONS.kind]: { select: details.kind ? { name: details.kind } : null },
-    [UNIONS.date]: { rich_text: richText(details.date) },
+    ...dateProperties(UNIONS.date, UNIONS.datePrecision, details.date, dateColumns),
     [UNIONS.place]: { rich_text: richText(details.place) },
     [UNIONS.notes]: { rich_text: richText(details.notes) },
   };
 }
 
-export function unionProperties(a: Person, b: Person, pageIdA: string, pageIdB: string, details?: UnionDetails): Record<string, unknown> {
-  return { [UNIONS.title]: { title: richText(unionTitle(a, b)) }, [UNIONS.partners]: { relation: [{ id: pageIdA }, { id: pageIdB }] }, ...(details ? unionDetailProperties(details) : {}) };
+export function unionProperties(a: Person, b: Person, pageIdA: string, pageIdB: string, details?: UnionDetails, dateColumns?: DateColumns): Record<string, unknown> {
+  return { [UNIONS.title]: { title: richText(unionTitle(a, b)) }, [UNIONS.partners]: { relation: [{ id: pageIdA }, { id: pageIdB }] }, ...(details ? unionDetailProperties(details, dateColumns) : {}) };
 }
 
 export function unionTitleProperty(a: Person, b: Person): Record<string, unknown> {

@@ -24,6 +24,7 @@ export type NotionPropertyValue = { id: string } & (
   | { type: 'title'; title: NotionRichText[] }
   | { type: 'rich_text'; rich_text: NotionRichText[] }
   | { type: 'select'; select: { name: string } | null }
+  | { type: 'date'; date: { start: string; end?: string | null } | null }
   | { type: 'relation'; relation: { id: string }[]; has_more?: boolean }
   | { type: string; [key: string]: unknown });
 

@@ -46,6 +46,8 @@ export interface GraveRecord extends GraveDetails {
   pageId: string;
 }
 
+export type DateColumns = 'text' | 'date';
+
 export interface NotionLink {
   databaseId: string;
   dataSourceId: string;
@@ -63,6 +65,8 @@ export interface NotionLink {
   syncedAt: string;
   // Which Notion columns the baseline was read with; a refresh reads everything again when it is older than NOTION_FIELDS_VERSION.
   fieldsVersion?: number;
+  // How Osoby and Związki keep dates: plain text (older databases, and undefined) or a Notion date with a "– dokładność" select beside it.
+  dateColumns?: DateColumns;
   // What Notion has in each person's or grave's photo columns, keyed by person or grave id and then column name; the images themselves are cached in IndexedDB.
   photos?: Record<string, Record<string, StoredPhoto[]>>;
 }

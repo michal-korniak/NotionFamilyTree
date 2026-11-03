@@ -1,10 +1,12 @@
 import type { NotionLink } from '../../types/person';
 import { NotionClient } from './notionClient';
 import { thumbnailColumn } from './notionPhotos';
-import { GRAVES, NOTION_FIELDS_VERSION, PEOPLE, UNIONS } from './notionMapping';
+import { DATE_PRECISION_OPTIONS, GRAVES, NOTION_FIELDS_VERSION, PEOPLE, UNIONS } from './notionMapping';
 
 const richText = { rich_text: {} };
 const files = { files: {} };
+const date = { date: {} };
+const precision = { select: { options: DATE_PRECISION_OPTIONS.map((name) => ({ name })) } };
 const select = (names: string[]) => ({ select: { options: names.map((name) => ({ name })) } });
 const twoWayRelation = (dataSourceId: string) => ({ relation: { data_source_id: dataSourceId, type: 'dual_property', dual_property: {} } });
 
@@ -32,9 +34,11 @@ export async function createNotionDatabases(token: string, parentPageId: string,
     [PEOPLE.birthSurname]: richText,
     [PEOPLE.marriedSurname]: richText,
     [PEOPLE.gender]: select(['Mężczyzna', 'Kobieta']),
-    [PEOPLE.birthDate]: richText,
+    [PEOPLE.birthDate]: date,
+    [PEOPLE.birthPrecision]: precision,
     [PEOPLE.birthPlace]: richText,
-    [PEOPLE.deathDate]: richText,
+    [PEOPLE.deathDate]: date,
+    [PEOPLE.deathPrecision]: precision,
     [PEOPLE.deathPlace]: richText,
     [PEOPLE.notes]: richText,
     [PEOPLE.photos]: files,
@@ -51,7 +55,8 @@ export async function createNotionDatabases(token: string, parentPageId: string,
     [UNIONS.title]: { title: {} },
     [UNIONS.partners]: twoWayRelation(people.dataSourceId),
     [UNIONS.kind]: select(['Małżeństwo', 'Narzeczeństwo', 'Nieformalny']),
-    [UNIONS.date]: richText,
+    [UNIONS.date]: date,
+    [UNIONS.datePrecision]: precision,
     [UNIONS.place]: richText,
     [UNIONS.ending]: select(['Rozwód', 'Śmierć']),
     [UNIONS.notes]: richText,
@@ -69,5 +74,5 @@ export async function createNotionDatabases(token: string, parentPageId: string,
   });
   await renameMirror(client, people.dataSourceId, graves.dataSourceId, GRAVES.buried, PEOPLE.grave);
 
-  return { databaseId: people.databaseId, dataSourceId: people.dataSourceId, unionsDataSourceId: unions.dataSourceId, gravesDataSourceId: graves.dataSourceId, title: 'Osoby', pageIds: {}, externalIds: {}, unions: {}, graves: {}, photos: {}, baseline: [], syncedAt: new Date().toISOString(), fieldsVersion: NOTION_FIELDS_VERSION };
+  return { databaseId: people.databaseId, dataSourceId: people.dataSourceId, unionsDataSourceId: unions.dataSourceId, gravesDataSourceId: graves.dataSourceId, title: 'Osoby', pageIds: {}, externalIds: {}, unions: {}, graves: {}, photos: {}, baseline: [], syncedAt: new Date().toISOString(), fieldsVersion: NOTION_FIELDS_VERSION, dateColumns: 'date' };
 }
